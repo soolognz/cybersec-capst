@@ -1,346 +1,360 @@
 # CHAPTER 2: LITERATURE REVIEW
 
-## 2.1 Review of Previous Studies
+## 2.1 Secure Shell (SSH) Protocol and Its Security Landscape
 
-### 2.1.1 The SSH Protocol and Authentication Mechanisms
+The Secure Shell (SSH) protocol was originally developed in 1995 by Tatu Ylonen at the Helsinki University of Technology as a secure replacement for unencrypted remote access protocols including Telnet, rlogin, and rsh [1]. The protocol was subsequently standardized by the Internet Engineering Task Force (IETF) through the RFC 4250--4256 document series, with RFC 4251 defining the overall protocol architecture [1]. Barrett, Silverman, and Byrnes [2] provide a comprehensive treatment of SSH implementation and deployment, documenting the protocol's evolution from a research tool to the universal standard for secure remote system administration. As of 2024, SSH is deployed on virtually every Linux and Unix server connected to the Internet, and all major cloud infrastructure providers---Amazon Web Services, Google Cloud Platform, and Microsoft Azure---use SSH key pairs as the default mechanism for initial access to virtual machine instances [1, 2].
 
-The Secure Shell (SSH) protocol is a cryptographic network protocol designed to provide a secure communication channel over an untrusted network. SSH was first developed in 1995 by Tatu Ylonen, a researcher at the Helsinki University of Technology in Finland, as a secure replacement for unencrypted remote access protocols such as Telnet, rlogin, and rsh [1]. The current widely deployed version is SSH-2, standardized by the Internet Engineering Task Force (IETF) through the RFC 4250-4256 document series in 2006 [2].
+The SSH-2 protocol architecture is organized into three layered components, each addressing a distinct security function [1, 2]. The Transport Layer Protocol (RFC 4253) establishes server authentication, data confidentiality through symmetric encryption, and data integrity through message authentication codes. The handshake process involves protocol version exchange, algorithm negotiation, Diffie-Hellman key exchange, and server host key verification. The User Authentication Protocol (RFC 4252) handles client identity verification through one of several methods: password authentication, public key authentication, host-based authentication, or keyboard-interactive authentication. The Connection Protocol (RFC 4254) multiplexes multiple logical channels over a single encrypted connection, supporting remote command execution, port forwarding, and secure file transfer via SFTP/SCP.
 
-SSH provides three fundamental security services: server authentication (verifying the identity of the server to the client), data confidentiality (encrypting all data transmitted over the connection), and data integrity (ensuring that data is not modified in transit). These services are implemented through a well-defined layered architecture that separates concerns and allows flexible negotiation of cryptographic algorithms. The current deployment of SSH is nearly universal in server administration: a 2022 survey by Censys found that over 99% of Linux servers accessible over the Internet run SSH as their primary remote administration protocol, and the default configuration of all major cloud providers uses SSH key pairs for initial server access.
+Password-based authentication, despite being the least secure of the available methods, remains widely deployed due to its simplicity and the absence of prerequisite key management infrastructure [2, 4]. The default OpenSSH configuration permits up to six authentication attempts per connection (MaxAuthTries = 6) and imposes no limit on the number of concurrent connections from a single source IP address [1, 6]. This permissive default configuration, combined with the protocol's lack of any built-in anti-automation mechanism (unlike web applications that can employ CAPTCHAs), creates a structurally exploitable attack surface for automated brute-force tools [2, 5].
 
-The SSH-2 architecture is organized into three layered protocol components:
+The scale of SSH-targeted attacks is documented by multiple empirical studies. Wu et al. [3] analyzed data from the National Center for Supercomputing Applications (NCSA) honeypot deployment and recorded approximately 11 billion SSH brute-force login attempts, demonstrating that SSH brute-forcing operates at an industrial scale driven by globally distributed botnets. The Verizon Data Breach Investigations Report [4] identifies stolen credentials as the most prevalent initial attack vector, accounting for approximately 29% of confirmed data breaches, with brute-force and credential-stuffing attacks representing the primary credential-theft mechanisms. Hellemons et al. [5] developed the SSHCure system and characterized SSH attacks as following a three-phase temporal structure: an initial scanning phase in which the attacker probes target reachability, a brute-force phase involving systematic credential enumeration, and a compromise phase in which successful credentials are exploited for lateral movement or data exfiltration.
 
-**Transport Layer Protocol (RFC 4253).** This layer provides server authentication, data confidentiality, and data integrity. The handshake process involves protocol version exchange, cryptographic algorithm negotiation, Diffie-Hellman key exchange, and server authentication using public keys. Upon completion, an encrypted communication channel is established between the client and the server [3].
+SSH servers record authentication events in system log files (typically `/var/log/auth.log` on Debian-based systems or `/var/log/secure` on Red Hat-based systems), with each event containing a timestamp, source IP address, attempted username, authentication result (success or failure), authentication method, and source port [1, 5]. These structured log fields provide the raw data from which behavioral features can be extracted for machine-learning-based anomaly detection, a capability that this thesis exploits through a 14-feature extraction pipeline operating on 5-minute sliding windows per source IP address.
 
-**User Authentication Protocol (RFC 4252).** This layer handles user identity verification. SSH-2 supports multiple authentication methods, including password authentication, public key authentication, host-based authentication, and keyboard-interactive authentication. In practice, the two most commonly used methods are password authentication and public key authentication [4].
+[Figure 2.1: Layered architecture of the SSH-2 protocol and authentication flow]
 
-**Connection Protocol (RFC 4254).** This layer enables multiplexing of multiple logical channels over a single SSH connection, supporting features such as remote command execution, port forwarding, and file transfer via SFTP/SCP [5].
+## 2.2 Brute-Force Attacks: Taxonomy, Patterns, and Evolution
 
-[Figure 2.1: Layered architecture of the SSH-2 protocol]
+Brute-force attacks against SSH servers can be formally defined as systematic attempts to discover valid authentication credentials through exhaustive or guided enumeration of the credential space [3, 4]. Given a character alphabet of size $|A|$ and a target password of length $L$, the theoretical maximum search space is $S = |A|^L$. For a password composed of lowercase letters (26) and digits (10) with length 8, this yields $S = 36^8 \approx 2.82 \times 10^{12}$ combinations. In practice, however, attackers rarely perform exhaustive enumeration; instead, they exploit the highly non-uniform distribution of human-chosen passwords to reduce the effective search space by orders of magnitude [4, 19].
 
-The password authentication mechanism in SSH operates as follows: (1) the client sends an authentication request containing the username and password over the encrypted channel; (2) the server verifies the credentials against the user database (typically /etc/shadow on Linux); (3) the server responds with either success (SSH_MSG_USERAUTH_SUCCESS) or failure (SSH_MSG_USERAUTH_FAILURE) [4]. Despite the password being transmitted over an encrypted channel, the password authentication mechanism has several inherent weaknesses that make it a target for brute-force attacks:
+The taxonomy of SSH brute-force attacks has evolved substantially over the past decade, driven by the arms race between attackers and defenders. Based on the literature [3, 5, 18, 19, 23] and empirical analysis of the honeypot data collected for this research (679 unique attacking IPs, 29,301 failed password attempts), five principal attack variants can be identified:
 
-- **No default limit on authentication attempts.** The default OpenSSH configuration permits multiple authentication attempts per session (MaxAuthTries defaults to 6) and does not limit the total number of sessions from a single IP address [6].
-- **Dependence on password strength.** Security effectiveness relies entirely on users selecting sufficiently strong passwords, which empirical evidence consistently shows is not guaranteed [7].
-- **No built-in anti-automation mechanism.** Unlike web applications that can employ CAPTCHAs, the SSH protocol has no integrated mechanism to distinguish between human users and automated attack tools [8].
+**Classic brute-force.** The attacker attempts credential combinations at maximum speed, typically targeting high-value accounts such as root, admin, and user [3, 5]. Characteristic behavioral signatures include extremely high login attempt frequency (hundreds to thousands per minute), near-uniform inter-attempt intervals (reflecting automated tool cadence), and rapid cycling through multiple usernames. Wu et al. [3] found that the root account is targeted in over 80% of SSH brute-force sessions observed in their honeypot data.
 
-SSH servers record authentication events in system log files (typically /var/log/auth.log on Debian/Ubuntu or /var/log/secure on CentOS/RHEL). Each event contains critical information including: timestamp, source IP address, username attempted, authentication result (success/failure), authentication method, and source port number [9]. These data fields provide a rich foundation for behavioral feature extraction and anomaly analysis in service of brute-force attack detection.
+**Dictionary attack.** This variant employs curated password lists (wordlists) rather than exhaustive enumeration, exploiting the observation that a small number of passwords account for a disproportionate fraction of real-world credential choices [19]. Owens and Matthews [19] analyzed SSH honeypot data and found that the top 20 most-attempted passwords accounted for over 40% of all login attempts, with "123456", "password", and "admin" consistently appearing in the top positions. Widely used wordlists include RockYou (approximately 14 million entries) and the SecLists collection, and attackers increasingly generate target-specific lists incorporating organizational names, service identifiers, and locale-specific terms.
 
-### 2.1.2 Classification of Brute-Force Attacks
+**Slow brute-force (low-and-slow attack).** The attacker deliberately reduces the attempt rate to evade frequency-based detection thresholds, executing only a few attempts per minute or per hour [23]. Javed and Paxson [23] conducted a systematic study of stealthy SSH brute-forcing and demonstrated that attacks operating at rates as low as 1--2 attempts per hour can achieve compromise rates comparable to aggressive campaigns while remaining invisible to conventional monitoring tools configured with standard thresholds. This attack variant is particularly insidious because its behavioral profile closely resembles that of a legitimate user who has forgotten their password [5, 7].
 
-A brute-force attack is a form of attack in which the adversary systematically attempts successive combinations of usernames and passwords until a valid credential is discovered. Theoretically, a brute-force attack will always succeed if the search space is finite and the attacker has sufficient time; however, in practice, the required time depends on password complexity and the rate of attempts [10]. Given an alphabet of size |A| and a password of length L, the maximum search space is S = |A|^L. For example, a password consisting of lowercase letters (26 characters) and digits (10 characters) with a length of 8 characters yields a search space of 36^8, approximately 2.82 x 10^12 combinations.
+**Distributed brute-force.** This variant leverages botnets or proxy networks to distribute the attack across hundreds or thousands of source IP addresses, with each individual IP performing only a small number of attempts [3, 5]. Per-IP failure-count-based detection methods are structurally incapable of identifying distributed attacks because no single IP exceeds the detection threshold. Wu et al. [3] documented coordinated distributed attacks originating from geographically diverse IP addresses that collectively executed millions of attempts while maintaining per-IP attempt counts below typical Fail2Ban thresholds.
 
-Based on analysis of published research and real-world data, the variants of SSH brute-force attacks can be classified as follows:
+**Credential stuffing.** This variant exploits username-password pairs leaked from data breaches at other services, capitalizing on the widespread practice of password reuse across platforms [4, 19]. Credential-stuffing attacks are particularly dangerous because the per-attempt success rate is substantially higher than that of random or dictionary-based attacks. The Verizon DBIR [4] notes that credential-stuffing attacks have increased significantly following major data breaches, with automated tools such as Sentry MBA and OpenBullet enabling attackers to test millions of leaked credentials against SSH servers.
 
-**Classic brute-force.** The attacker attempts all possible combinations at maximum speed, typically targeting common accounts such as root, admin, and user. Distinguishing characteristics include: an extremely high frequency of failed logins (hundreds to thousands per minute), very short and uniform intervals between attempts, and the use of multiple distinct usernames [11].
+Bezerra et al. [18] analyzed SSH attack durations across a large-scale honeypot dataset and identified significant variability in temporal profiles: attack sessions ranged from sub-second bursts (automated scanners testing a single credential) to sustained campaigns spanning multiple days (coordinated, multi-phase attacks). This temporal diversity imposes a requirement for detection systems to operate effectively across multiple time scales---a requirement that motivates the 5-minute sliding window approach adopted in this thesis.
 
-**Dictionary attack.** This variant uses a pre-compiled list of common passwords (a wordlist) rather than exhaustively enumerating all combinations. Widely used lists include RockYou (14 million passwords), SecLists, and target-specific customized lists. This method is more efficient than classic brute-force because it exploits the tendency of users to select weak passwords [12].
+[Table 2.1: Taxonomy of SSH brute-force attack variants with characteristic behavioral features]
 
-**Slow brute-force (low-and-slow attack).** The attacker deliberately reduces the rate of the attack, executing only a few attempts per minute or even per hour, in order to evade detection mechanisms based on frequency thresholds. This is the most difficult attack form to detect using traditional methods, as the attack behavior closely resembles that of a legitimate user who has forgotten their password [13].
+| Variant | Attempt Rate | IP Diversity | Password Strategy | Detection Difficulty |
+|---------|-------------|-------------|-------------------|---------------------|
+| Classic brute-force | Very high (>100/min) | Single IP | Exhaustive or top-N | Low |
+| Dictionary attack | High (10--100/min) | Single IP | Wordlist-based | Low--Medium |
+| Slow brute-force | Very low (<1/min) | Single IP | Targeted | High |
+| Distributed attack | Low per IP | Many IPs (>10) | Coordinated | High |
+| Credential stuffing | Medium | Variable | Leaked credentials | Very High |
 
-**Distributed brute-force.** This attack uses a botnet or proxy service to distribute the attack across many different IP addresses. Each IP performs only a small number of attempts, rendering detection methods based on per-IP failure counts ineffective. Owens and Matthews [14] have reported that distributed attacks account for an increasing proportion of recorded SSH brute-force attacks.
+## 2.3 Traditional Defense Mechanisms and Their Limitations
 
-**Credential stuffing.** This variant uses username-password pairs leaked from data breaches at other services. The attacker exploits the widespread practice of password reuse across services. This form is particularly dangerous because the success rate is significantly higher than that of random brute-force [15].
+Traditional SSH brute-force defense mechanisms can be categorized into four classes, each with characteristic strengths and limitations [6, 7, 12].
 
-[Table 2.1: Comparison of characteristics of SSH brute-force attack variants]
+**Threshold-based intrusion prevention.** Fail2Ban [6] is the most widely deployed tool in this category. It monitors SSH authentication logs and applies firewall rules (via iptables or nftables) to block IP addresses that exceed a configured failure threshold within a specified time window. The default SSH jail configuration uses maxretry = 5, findtime = 600 seconds, and bantime = 600 seconds. While effective against naive high-speed attacks, Fail2Ban's static threshold architecture creates an inherent precision-sensitivity tradeoff: lowering the threshold increases false positives (blocking legitimate users who mistype passwords), while raising it increases false negatives (permitting slow or distributed attacks) [6, 7]. Chandola et al. [7] identified this static-threshold limitation as a fundamental challenge in anomaly detection, noting that real-world data streams exhibit non-stationary behavior that fixed thresholds cannot accommodate.
 
-Common tools used for SSH brute-force attacks include: Hydra (multi-protocol support, parallel attack), Medusa (optimized for high-speed attacks), Ncrack (from the Nmap project), Patator (a flexible Python-based framework), and custom scripts using the Paramiko or libssh libraries [16]. The diversity of attack tools produces varying behavioral patterns in log data, imposing a requirement for generalization capability in the detection system.
+**IP reputation and blacklisting.** Services such as AbuseIPDB, Spamhaus, and Blocklist.de maintain databases of IP addresses associated with malicious activity [4, 6]. Blacklist-based approaches are inherently reactive---an IP is listed only after it has been observed conducting attacks elsewhere---and are easily circumvented by attackers who rotate through fresh IP addresses or employ residential proxy networks [3, 7]. Furthermore, blacklists suffer from both false positives (legitimate services operating behind shared NAT addresses that have been erroneously listed) and incomplete coverage (newly provisioned attack infrastructure that has not yet been reported).
 
-### 2.1.3 Traditional Detection Methods
+**Signature-based intrusion detection.** Network intrusion detection systems such as Snort and Suricata can identify SSH brute-force attacks by matching traffic patterns against predefined rule signatures [7, 15]. However, signature-based detection is structurally limited to known attack patterns for which rules have been written and cannot detect novel attack variants [12]. Moreover, because SSH traffic is encrypted end-to-end, deep packet inspection of SSH session content is infeasible; detection must rely on metadata features (connection frequency, flow duration, packet sizes) rather than payload analysis [15].
 
-**Static threshold-based methods.** The most prevalent method in practice involves establishing a fixed threshold for the number of failed login attempts. Fail2Ban, the most widely used open-source intrusion prevention tool, operates by monitoring system log files and blocking violating IP addresses via iptables/nftables when the failure count exceeds a threshold within a specified time period [17]. The default Fail2Ban configuration for SSH is typically: maxretry=5, findtime=600 seconds, bantime=600 seconds. This method is simple to deploy and effective against high-speed brute-force attacks. However, it has well-documented limitations: it cannot detect slow attacks operating below the threshold; it does not adapt to the natural variability of traffic; the false positive rate is elevated during peak hours when many legitimate users log in simultaneously; and it is easily evaded by distributed attacks from multiple IPs.
+**Authentication hardening.** Measures such as public key authentication, two-factor authentication (via PAM modules), non-standard port assignment, and port knocking reduce the attack surface by either eliminating password authentication entirely or raising the barrier to initial connection establishment [1, 2]. While highly effective when deployed, these measures are not universally applicable---legacy systems, multi-user environments with diverse client configurations, and cloud instances requiring initial password-based bootstrapping all present practical obstacles to full authentication hardening [2, 6].
 
-**List-based methods.** These methods use blacklists and whitelists to control access. Services such as AbuseIPDB, Spamhaus, and Blocklist.de provide lists of IP addresses known for malicious activity [18]. The primary limitation is their reactive nature --- an IP is only blacklisted after it has already conducted attacks elsewhere, and attackers can easily switch to new IP addresses.
+The limitations of these traditional mechanisms motivate the application of machine learning approaches that can learn complex behavioral patterns from data, adapt to changing traffic conditions, and detect novel attack variants without requiring explicit rule definitions [7, 12]. Buczak and Guven [12] concluded their comprehensive survey by noting that the integration of machine learning with traditional security infrastructure represents the most promising direction for next-generation intrusion detection systems.
 
-**Signature-based methods.** Intrusion detection systems (IDS) such as Snort and Suricata can detect SSH brute-force attacks by matching network traffic patterns against known signatures (rules) [19]. However, this method cannot detect novel attack variants for which no signature exists, and its effectiveness is limited when SSH traffic is encrypted end-to-end, rendering packet content analysis infeasible.
+[Table 2.2: Comparison of traditional SSH defense mechanisms]
 
-**Enhanced authentication methods.** Authentication-level countermeasures include: adopting public key authentication, deploying two-factor authentication via PAM modules, changing the default SSH port, and using port knocking [20]. These measures are effective but are not always feasible in all environments, particularly legacy systems or multi-user environments.
+| Method | Strengths | Limitations | Evasion Techniques |
+|--------|-----------|-------------|-------------------|
+| Fail2Ban (threshold) | Simple, low overhead | Static threshold, no adaptation | Slow-rate, distributed |
+| IP blacklisting | No local computation | Reactive, incomplete coverage | IP rotation, proxies |
+| Signature IDS | Known-attack detection | Cannot detect novel attacks | Encryption, polymorphism |
+| Auth hardening | Eliminates attack surface | Not universally deployable | N/A (preventive) |
 
-[Table 2.2: Comparison of advantages and disadvantages of traditional detection methods]
+## 2.4 Anomaly Detection for Intrusion Detection Systems
 
-### 2.1.4 Machine Learning in Intrusion Detection
+Anomaly detection, defined as the identification of data patterns that deviate significantly from expected normal behavior, constitutes one of the foundational paradigms in intrusion detection [7]. Chandola, Banerjee, and Kumar [7] provided a seminal taxonomy of anomaly detection approaches, categorizing them along two principal dimensions: the nature of the detection model (classification-based, nearest-neighbor-based, clustering-based, statistical, information-theoretic, spectral, and isolation-based) and the availability of labeled data (supervised, semi-supervised, and unsupervised).
 
-The application of machine learning to network intrusion detection systems (NIDS) has been the subject of extensive research over the past two decades. Buczak and Guven [21] compiled a comprehensive survey of data mining and machine learning methods for cybersecurity, demonstrating that machine learning algorithms can achieve significantly higher detection performance compared to rule-based methods in many scenarios.
+In the context of network intrusion detection, the semi-supervised anomaly detection paradigm---in which models are trained exclusively on data representing normal behavior and subsequently identify deviations from the learned normal profile as potential attacks---has attracted substantial research attention [7, 12, 17]. This paradigm offers three key advantages for SSH brute-force detection. First, it does not require labeled attack data for training, circumventing the practical challenge of obtaining comprehensive, accurately labeled datasets in operational environments [17, 24]. Pimentel et al. [17] provided a comprehensive review of novelty detection---the closely related problem of identifying previously unseen patterns---and noted that one-class learning approaches (trained on a single class of normal data) provide the most robust framework for detecting genuinely novel anomalies. Second, semi-supervised approaches can detect zero-day attacks and novel attack variants that have never been observed in training data, because detection is based on deviation from normality rather than similarity to known attacks [7, 12]. Third, in SSH environments, normal behavior data is readily available from production logs (by selecting periods of known-clean operation) or from controlled simulation, making the semi-supervised training paradigm practically feasible [15, 24].
 
-Machine learning methods for intrusion detection are classified along several dimensions:
+The choice among specific anomaly detection algorithms involves tradeoffs along multiple dimensions: computational complexity (critical for real-time processing), sensitivity to hyperparameter selection, ability to handle high-dimensional feature spaces, robustness to noise and outliers in training data, and interpretability of anomaly scores [7, 20]. Goldstein and Uchida [20] conducted a comprehensive comparative evaluation of unsupervised anomaly detection algorithms on standardized benchmark datasets and found that no single algorithm dominates across all datasets and evaluation metrics, underscoring the importance of algorithm selection based on the specific characteristics of the target domain. Nassif et al. [21] extended this analysis to the cybersecurity domain specifically, surveying machine learning approaches for anomaly-based intrusion detection and identifying Isolation Forest, LOF, and OCSVM as the three most widely studied unsupervised algorithms for network security applications.
 
-**By learning paradigm:**
-- *Supervised learning:* Requires labeled training data (normal/attack). Common algorithms include Random Forest, Support Vector Machine, Neural Networks, and Gradient Boosting. The advantage is high accuracy when sufficient quality training data is available; the disadvantage is dependence on labeled data and difficulty in detecting unknown attack types [22].
-- *Unsupervised learning:* Does not require labeled data; instead, it learns the pattern of normal behavior and treats data points that deviate from this pattern as anomalies. The advantage is the ability to detect unknown attack types (zero-day attacks); the disadvantage is a generally higher false positive rate [23].
-- *Semi-supervised learning:* Combines a small quantity of labeled data with a large volume of unlabeled data. This approach is suitable for real-world scenarios where labeled data is scarce and expensive to obtain [24].
+For this thesis, three algorithms were selected for implementation and comparative evaluation: Isolation Forest [8, 9] as the primary detection algorithm, and Local Outlier Factor [10] and One-Class SVM [11] as benchmarks. This selection is motivated by the complementary detection paradigms they represent (isolation-based, density-based, and boundary-based, respectively), their established track records in network intrusion detection research [20, 21], and their availability in mature, well-tested implementations within the scikit-learn library. The following three sections present the mathematical foundations of each algorithm.
 
-**By detection approach:**
-- *Misuse detection:* Builds models of known attack behaviors and detects attacks when traffic patterns match the model. This is equivalent to the signature-based approach but uses machine learning models instead of manually crafted rules [25].
-- *Anomaly detection:* Builds a model of normal behavior and detects attacks when traffic patterns deviate from the model. This approach can detect unknown attacks but requires determining an appropriate decision boundary [26].
+## 2.5 Isolation Forest and Its Extensions
 
-In the context of SSH brute-force detection, the unsupervised anomaly detection approach was selected for this research based on three key considerations. First, the nature of brute-force attacks is continuously evolving, and supervised models trained on historical attack data may fail to recognize new variants. By modeling normal behavior rather than attack behavior, anomaly detection offers superior generalization to novel attack forms [27]. Second, accurately labeled attack data is extremely difficult to collect in practice. Although honeypot data provides realistic attack samples, precise labeling of every login session in an operational environment is infeasible at scale [28]. Third, unsupervised anomaly detection algorithms such as Isolation Forest offer computational efficiency advantages that enable real-time processing --- a critical requirement for intrusion detection systems [29].
+### 2.5.1 Algorithmic Foundation
 
-### 2.1.5 Anomaly Detection Algorithms
+Isolation Forest (IF) was proposed by Liu, Ting, and Zhou [8] at the IEEE International Conference on Data Mining (ICDM) in 2008 and subsequently formalized in a comprehensive journal publication in ACM Transactions on Knowledge Discovery from Data (TKDD) in 2012 [9]. The algorithm represents a paradigm shift in anomaly detection: whereas traditional methods detect anomalies as data points that are distant from (distance-based methods) or sparse relative to (density-based methods) the majority of the data, Isolation Forest detects anomalies as data points that are easy to isolate through random partitioning [8, 9].
 
-**Isolation Forest (IF).** Isolation Forest was proposed by Liu, Ting, and Zhou in 2008 at Monash University, Australia, and formally published in ACM Transactions on Knowledge Discovery from Data in 2012 [29]. Unlike most anomaly detection algorithms that rely on distance or density measures, Isolation Forest is based on the principle of isolation: anomalous points, due to their distinct feature values, will be isolated (separated from other points) more rapidly than normal points during random partitioning.
+The fundamental insight underlying Isolation Forest is that anomalous data points, by virtue of their atypical feature values, require fewer random partitions to be separated from the rest of the dataset than normal points [8]. This property arises because anomalies are typically few in number and possess feature values that are substantially different from those of the majority population, making them susceptible to isolation by a small number of random splits.
 
-The algorithm constructs an ensemble of Isolation Trees (iTrees) by repeating the following process: randomly selecting a feature, randomly selecting a split value within the [min, max] range of that feature, and dividing the data into two branches. The process continues until each data point is isolated or the maximum tree depth is reached. The anomaly score of a point x is computed based on the expected path length across all t trees in the forest:
+### 2.5.2 Isolation Tree Construction
+
+An Isolation Tree (iTree) is constructed through a recursive random partitioning process [8, 9]. Given a dataset $X = \{x_1, x_2, \ldots, x_n\}$ with $d$ features, the construction proceeds as follows:
+
+1. Randomly select a feature $q$ from the $d$ available features.
+2. Randomly select a split value $p$ uniformly from the interval $[\min(X_q), \max(X_q)]$, where $X_q$ denotes the values of feature $q$ in the current node's data.
+3. Partition the data into two subsets: the left branch contains points where $x_q < p$, and the right branch contains points where $x_q \geq p$.
+4. Recurse on each branch until one of the stopping conditions is met: the node contains a single data point (isolated), or the tree reaches a predefined maximum depth $l = \lceil \log_2 \psi \rceil$, where $\psi$ is the sub-sampling size.
+
+### 2.5.3 Anomaly Score Computation
+
+The anomaly score of a data point $x$ is derived from its average path length across an ensemble of $t$ Isolation Trees [8, 9]. The path length $h(x)$ of a point $x$ in a single iTree is defined as the number of edges traversed from the root node to the terminal node (external node) at which $x$ is isolated, plus an adjustment factor $c(k)$ for the unbuilt subtree when the maximum depth is reached, where $k$ is the number of data points in the terminal node.
+
+The anomaly score is defined as:
 
 $$s(x, n) = 2^{-\frac{E[h(x)]}{c(n)}}$$
 
-where E[h(x)] is the average path length of x across t Isolation Trees, and c(n) is the average path length of an unsuccessful search in a Binary Search Tree with n nodes, defined as c(n) = 2H(n-1) - 2(n-1)/n, with H(i) = ln(i) + gamma being the harmonic number and gamma approximately equal to 0.5772 (the Euler-Mascheroni constant). Scores approaching 1 indicate anomalies (short average path lengths), scores around 0.5 indicate no clear anomalies, and scores approaching 0 indicate normal points.
+where $E[h(x)]$ is the expected (average) path length of $x$ across $t$ Isolation Trees, and $c(n)$ is the average path length of an unsuccessful search in a Binary Search Tree (BST) constructed from $n$ data points, serving as a normalization factor [8, 9]. The normalization factor is computed as:
 
-Isolation Forest possesses several advantages for SSH brute-force detection: linear time complexity O(t * n * log psi), where t is the number of trees, n is the training data size, and psi is the sub-sampling size, enabling real-time processing; effectiveness with high-dimensional data without suffering from the curse of dimensionality; no distributional assumptions about the data; and robustness to outlier swamping and masking through sub-sampling [29-31].
+$$c(n) = 2H(n-1) - \frac{2(n-1)}{n}$$
 
-**Local Outlier Factor (LOF).** LOF was proposed by Breunig, Kriegel, Ng, and Sander in 2000 [32]. It is a local density-based anomaly detection method that compares the local density of each data point with the local densities of its nearest neighbors. The core idea is that an anomalous point has a significantly lower local density than its neighbors. The LOF score is computed as the ratio of the average local reachability density of a point's k-nearest neighbors to the point's own local reachability density. LOF approximately equal to 1 indicates normal density; LOF much greater than 1 indicates an anomaly. While effective for many anomaly detection tasks, LOF has limitations for real-time SSH attack detection: O(n^2) computational complexity for k-nearest neighbor computation, sensitivity to the choice of k, and a requirement to store the entire training dataset in memory [32-34].
+where $H(i) = \ln(i) + \gamma$ is the harmonic number approximation and $\gamma \approx 0.5772$ is the Euler-Mascheroni constant [8].
 
-**One-Class SVM (OCSVM).** One-Class SVM was proposed by Scholkopf, Platt, Shawe-Taylor, Smola, and Williamson in 2001 [35]. The algorithm extends traditional SVM for anomaly detection by finding a hyperplane in a high-dimensional feature space that maximally separates training data points (normal) from the origin. Points on the origin side of the hyperplane are classified as anomalous. The RBF kernel K(x_i, x) = exp(-gamma * ||x_i - x||^2) is most commonly used. OCSVM has a strong theoretical foundation from optimization theory and kernel methods, and the nu parameter provides intuitive control over the expected anomaly proportion. However, its training complexity of O(n^2) to O(n^3) and high sensitivity to kernel and parameter selection are notable disadvantages [35-37].
+The anomaly score has the following interpretation [8, 9]:
+- $s(x, n) \to 1$: the point has a short average path length, indicating high susceptibility to isolation and therefore high anomaly likelihood.
+- $s(x, n) \approx 0.5$: the average path length is close to the expected path length for the dataset, indicating no clear anomaly signal.
+- $s(x, n) \to 0$: the point has a long average path length, indicating deep embedding within the normal data distribution.
 
-[Table 2.3: Comparison of Isolation Forest, LOF, and One-Class SVM characteristics]
+### 2.5.4 Computational Complexity and Practical Advantages
 
-From a theoretical standpoint, Isolation Forest offers advantages in computational efficiency, high-dimensional data handling, and absence of distributional assumptions. LOF excels at detecting local outliers that are anomalous only within their neighborhood context. OCSVM has the strongest theoretical foundations and allows precise control over the anomaly proportion through the nu parameter [38].
+The time complexity of Isolation Forest is $O(t \cdot \psi \cdot \log \psi)$ for training and $O(t \cdot \log \psi)$ for scoring a single data point, where $t$ is the number of trees and $\psi$ is the sub-sampling size [8, 9]. This linear-logarithmic complexity represents a significant advantage over density-based methods (LOF: $O(n^2)$) and kernel-based methods (OCSVM: $O(n^2)$ to $O(n^3)$), making Isolation Forest particularly suitable for real-time applications where scoring latency is a critical constraint [8, 20].
 
-### 2.1.6 Dynamic Thresholding in Anomaly Detection
+Additional practical advantages include: (i) robustness to the swamping and masking effects that degrade the performance of distance-based and density-based methods when anomalies are numerous or clustered [9]; (ii) absence of distributional assumptions about the data, unlike statistical methods that assume Gaussian or other parametric distributions [8, 17]; (iii) effective handling of high-dimensional feature spaces without suffering from the curse of dimensionality that affects distance-based methods [9, 20]; and (iv) interpretability of the anomaly score, which has a natural probabilistic interpretation as the likelihood of isolation under random partitioning [8].
 
-In anomaly detection systems, the threshold plays a decisive role in classifying a data point as normal or anomalous. Static thresholds --- fixed values determined a priori --- are simple to implement but inappropriate for data with non-stationary characteristics that change over time [39]. In the SSH monitoring context, access traffic varies significantly over time: business hours have more legitimate logins than off-hours, weekdays differ from weekends, and special events (system maintenance, application deployments) create legitimate but unusual traffic spikes. Static thresholds cannot adapt to these variations, leading to both false positives during legitimate traffic surges and false negatives when the baseline traffic level is low.
+### 2.5.5 Extended Isolation Forest
 
-**Exponentially Weighted Moving Average (EWMA).** EWMA is a time series smoothing method that assigns exponentially decreasing weights to older observations. Introduced by Roberts in 1959 in the context of statistical quality control [40], EWMA has been widely applied in many domains, including network anomaly detection [41]. The EWMA formula is:
+Hariri, Kind, and Brunner [16] identified a limitation of the original Isolation Forest algorithm: because axis-parallel splits are used exclusively, the algorithm can produce artifacts in the anomaly score landscape, assigning anomalous scores to normal points that lie along the coordinate axes in regions of feature space dominated by anomalies. The Extended Isolation Forest (EIF) addresses this limitation by replacing axis-parallel splits with hyperplane splits of arbitrary orientation, defined by a random normal vector and an intercept point [16]. While EIF provides more accurate anomaly scores in datasets with complex geometric structures, the original Isolation Forest remains the more widely deployed variant for intrusion detection due to its simplicity, interpretability, and lower computational overhead [16, 20]. This thesis employs the original Isolation Forest algorithm for the primary detection model.
+
+[Figure 2.2: Illustration of Isolation Forest partitioning: anomalous points (short path lengths) versus normal points (long path lengths)]
+
+## 2.6 Local Outlier Factor (LOF)
+
+### 2.6.1 Algorithmic Foundation
+
+Local Outlier Factor (LOF) was proposed by Breunig, Kriegel, Ng, and Sander [10] at the ACM SIGMOD International Conference on Management of Data in 2000. LOF introduced the concept of local density-based anomaly detection, addressing a fundamental limitation of global approaches: a data point may be anomalous relative to its local neighborhood while appearing normal in a global context, or vice versa [10]. By comparing the local density of each data point with the local densities of its $k$-nearest neighbors, LOF produces a degree-of-outlierness score that captures the relative isolation of a point within its local context.
+
+### 2.6.2 Mathematical Formulation
+
+The LOF computation involves several intermediate definitions [10]. Given a dataset $X$ and a positive integer $k$:
+
+**$k$-distance.** The $k$-distance of a point $x$, denoted $d_k(x)$, is the distance between $x$ and its $k$-th nearest neighbor in $X$.
+
+**$k$-distance neighborhood.** The $k$-distance neighborhood of $x$, denoted $N_k(x)$, is the set of all points whose distance from $x$ is at most $d_k(x)$: $N_k(x) = \{y \in X \setminus \{x\} : d(x, y) \leq d_k(x)\}$.
+
+**Reachability distance.** The reachability distance of $x$ with respect to a point $o$ is:
+
+$$\text{reach-dist}_k(x, o) = \max\{d_k(o), d(x, o)\}$$
+
+This definition smooths the density estimation by replacing distances smaller than $d_k(o)$ with $d_k(o)$, reducing the sensitivity of the density estimate to statistical fluctuations among the nearest neighbors [10].
+
+**Local reachability density.** The local reachability density of $x$ is the inverse of the average reachability distance from $x$ to its $k$-nearest neighbors:
+
+$$\text{lrd}_k(x) = \left( \frac{\sum_{o \in N_k(x)} \text{reach-dist}_k(x, o)}{|N_k(x)|} \right)^{-1}$$
+
+**Local Outlier Factor.** The LOF score of $x$ is the average ratio of the local reachability densities of $x$'s neighbors to $x$'s own local reachability density:
+
+$$\text{LOF}_k(x) = \frac{\sum_{o \in N_k(x)} \frac{\text{lrd}_k(o)}{\text{lrd}_k(x)}}{|N_k(x)|}$$
+
+Interpretation: $\text{LOF}_k(x) \approx 1$ indicates that $x$ has a local density similar to its neighbors (normal). $\text{LOF}_k(x) \gg 1$ indicates that $x$ has a significantly lower local density than its neighbors (anomalous). $\text{LOF}_k(x) < 1$ indicates that $x$ is denser than its neighborhood (deeply embedded in a cluster) [10].
+
+### 2.6.3 Strengths and Limitations for SSH Detection
+
+LOF excels at detecting local anomalies---points that are anomalous relative to their immediate neighborhood but not necessarily in a global context [10, 20]. This property is valuable for SSH intrusion detection in environments where different user groups exhibit distinct behavioral patterns (e.g., system administrators versus application developers), as LOF can identify behavior that is anomalous within a specific user group without requiring global normalization [10, 17].
+
+However, LOF has significant practical limitations for real-time SSH monitoring [10, 20, 21]. The computational complexity for computing $k$-nearest neighbors is $O(n^2)$ for brute-force search (or $O(n \log n)$ with spatial indexing structures such as KD-trees, which degrade in high-dimensional spaces). Additionally, LOF requires storing the entire training dataset in memory for neighbor queries during the scoring phase, and the algorithm's performance is sensitive to the choice of $k$, which may require domain-specific tuning [10, 20]. Goldstein and Uchida [20] found that LOF's performance is competitive with Isolation Forest on low-dimensional benchmark datasets but degrades more rapidly as dimensionality increases.
+
+## 2.7 One-Class Support Vector Machine (OCSVM)
+
+### 2.7.1 Algorithmic Foundation
+
+One-Class Support Vector Machine (OCSVM) was proposed by Scholkopf, Platt, Shawe-Taylor, Smola, and Williamson [11] in Neural Computation in 2001. The algorithm extends the traditional two-class SVM framework to the one-class (novelty detection) setting by finding a maximal-margin hyperplane in a kernel-induced feature space that separates the training data from the origin [11]. Data points that fall on the origin side of the hyperplane are classified as anomalous (novel).
+
+### 2.7.2 Optimization Problem
+
+The OCSVM optimization problem is formulated as follows [11]. Given training data $\{x_1, x_2, \ldots, x_n\}$ drawn from the normal class, a kernel function $\Phi$ that maps data into a high-dimensional feature space, and a parameter $\nu \in (0, 1]$ that controls the tradeoff between the margin and the fraction of training points permitted to fall on the anomalous side of the hyperplane:
+
+$$\min_{w, \xi, \rho} \frac{1}{2} \|w\|^2 + \frac{1}{\nu n} \sum_{i=1}^{n} \xi_i - \rho$$
+
+subject to:
+
+$$w \cdot \Phi(x_i) \geq \rho - \xi_i, \quad \xi_i \geq 0, \quad i = 1, \ldots, n$$
+
+where $w$ is the normal vector to the separating hyperplane, $\rho$ is the offset, and $\xi_i$ are slack variables that permit soft-margin violations [11]. The parameter $\nu$ has a dual interpretation: it is an upper bound on the fraction of training points classified as outliers and a lower bound on the fraction of support vectors [11].
+
+The dual formulation, solved via quadratic programming, yields the decision function:
+
+$$f(x) = \text{sgn}\left( \sum_{i=1}^{n} \alpha_i K(x_i, x) - \rho \right)$$
+
+where $\alpha_i$ are the dual variables (Lagrange multipliers) and $K(x_i, x) = \Phi(x_i) \cdot \Phi(x)$ is the kernel function [11]. The most commonly used kernel for anomaly detection is the Radial Basis Function (RBF) kernel:
+
+$$K(x_i, x) = \exp\left( -\gamma \|x_i - x\|^2 \right)$$
+
+where $\gamma > 0$ controls the kernel bandwidth. Points for which $f(x) < 0$ are classified as anomalous [11].
+
+### 2.7.3 Strengths and Limitations for SSH Detection
+
+OCSVM has a rigorous theoretical foundation rooted in statistical learning theory and convex optimization, providing principled generalization guarantees [11, 17]. The $\nu$ parameter offers intuitive control over the expected anomaly proportion, which can be set based on domain knowledge about the expected attack prevalence [11, 20]. Pimentel et al. [17] noted that OCSVM is one of the best-studied novelty detection algorithms, with well-understood theoretical properties.
+
+The primary limitations of OCSVM for real-time SSH detection are computational: the training complexity is $O(n^2)$ to $O(n^3)$ depending on the solver, and the scoring complexity is $O(n_{sv})$ where $n_{sv}$ is the number of support vectors, which can be a substantial fraction of $n$ [11, 20, 21]. Additionally, OCSVM performance is highly sensitive to the choice of kernel function and the hyperparameters $\nu$ and $\gamma$, requiring careful tuning via cross-validation or domain-specific heuristics [11, 20]. Goldstein and Uchida [20] observed that OCSVM achieves competitive detection performance when properly tuned but exhibits higher variance across hyperparameter settings compared to Isolation Forest.
+
+[Table 2.3: Comparative summary of Isolation Forest, LOF, and OCSVM]
+
+| Property | Isolation Forest [8, 9] | LOF [10] | OCSVM [11] |
+|----------|------------------------|----------|------------|
+| Detection paradigm | Isolation-based | Local density-based | Boundary-based |
+| Training complexity | $O(t \cdot \psi \log \psi)$ | $O(n^2)$ | $O(n^2)$--$O(n^3)$ |
+| Scoring complexity | $O(t \log \psi)$ | $O(n \cdot k)$ | $O(n_{sv})$ |
+| Memory requirement | Model only ($t$ trees) | Full training set | Support vectors |
+| Distributional assumptions | None | None | Implicit (via kernel) |
+| Key hyperparameters | $t$, $\psi$, contamination | $k$ | $\nu$, $\gamma$, kernel |
+| Sensitivity to dimensionality | Low | High | Moderate |
+| Score interpretability | High (probability-like) | Moderate (ratio) | Low (signed distance) |
+| Real-time suitability | High | Low--Moderate | Moderate |
+
+## 2.8 Feature Selection and Data Preprocessing for Intrusion Detection Systems
+
+The effectiveness of any machine-learning-based intrusion detection system is fundamentally constrained by the quality and informativeness of the features extracted from raw data [7, 12, 15]. Buczak and Guven [12] emphasized that feature engineering---the process of transforming raw log data into meaningful numerical representations---is often the single most impactful component of the machine learning pipeline for cybersecurity applications, outweighing the choice of algorithm in many practical scenarios.
+
+Features for SSH brute-force detection can be categorized into four principal classes [5, 12, 15]:
+
+**Frequency features** capture the volume and rate of authentication activity. Examples include the total number of login attempts, the number of failed attempts, the failure ratio (failed/total), and the number of unique usernames attempted within a time window [5, 15]. Frequency features are effective for detecting high-speed brute-force attacks but provide limited discriminative power against slow-rate attacks that operate below conventional rate thresholds [23].
+
+**Temporal features** capture the timing characteristics of authentication events. Examples include the mean, minimum, and standard deviation of inter-attempt intervals, session duration statistics, and the distribution of attempts across time-of-day bins [5, 18]. Bezerra et al. [18] demonstrated that temporal features provide significant discriminative power for distinguishing automated attacks from human-initiated sessions, because automated tools produce highly regular temporal patterns (near-constant inter-attempt intervals) that differ markedly from the irregular timing of human interactions. Sperotto et al. [15] confirmed this finding in their flow-based SSH analysis, reporting that temporal features contributed more to detection accuracy than frequency features alone.
+
+**Authentication features** capture the credential-level characteristics of login behavior. Examples include the number of unique usernames attempted, the presence of root/admin login attempts, the diversity of attempted passwords (measurable through entropy or unique-count metrics), and the ratio of successful to total attempts [5, 19]. Owens and Matthews [19] found that attack sessions exhibit characteristic username and password distributions (heavily skewed toward common accounts and weak passwords) that differ systematically from legitimate usage patterns.
+
+**Connection features** capture network-level properties of SSH sessions. Examples include the number of concurrent connections, source port entropy, geographic origin diversity, and the use of known malicious network ranges [15, 24]. Ring et al. [24] surveyed datasets for network-based intrusion detection and identified connection-level features as particularly valuable for detecting distributed attacks where individual-IP behavioral features may appear benign.
+
+This thesis extracts 14 features per source IP address per 5-minute sliding window, spanning all four feature categories. The feature set was designed to balance comprehensiveness (capturing sufficient behavioral information to discriminate among all five attack variants) with computational efficiency (maintaining the real-time processing requirement). Feature selection was informed by the literature reviewed above and refined through empirical feature importance analysis, which identified session_duration_mean (5.50% importance), min_inter_attempt_time (3.86%), and mean_inter_attempt_time (2.61%) as the top three discriminative features---confirming the primacy of temporal features reported by Bezerra et al. [18] and Sperotto et al. [15].
+
+Data preprocessing for anomaly detection requires particular attention to feature scaling, missing value handling, and the treatment of categorical variables [7, 12]. Pimentel et al. [17] noted that distance-based and kernel-based methods (LOF, OCSVM) are highly sensitive to feature scale, necessitating standardization (zero mean, unit variance) or min-max normalization. Isolation Forest is theoretically scale-invariant (because splits are defined on individual features), but empirical evidence suggests that standardization can improve performance when features have vastly different ranges [9, 20].
+
+[Figure 2.3: Feature extraction pipeline from SSH authentication logs to 14-dimensional feature vectors]
+
+## 2.9 Dynamic Threshold Mechanisms for Anomaly Detection
+
+### 2.9.1 The Static Threshold Problem
+
+In anomaly detection systems, the threshold determines the boundary between normal and anomalous classifications: data points with anomaly scores exceeding the threshold are flagged as attacks, while those below are treated as normal [7, 13]. Static thresholds---fixed values determined during training and applied unchanged during operation---are simple to implement but fundamentally inappropriate for data streams with non-stationary characteristics [7, 13, 14]. In the SSH monitoring context, authentication traffic exhibits pronounced temporal variability: business hours generate more legitimate logins than off-hours, weekdays differ from weekends, and events such as system maintenance or application deployments create legitimate but unusual traffic spikes [5, 15]. A static threshold calibrated for average conditions will generate excessive false positives during high-activity periods and miss subtle attacks during low-activity periods [7, 14].
+
+### 2.9.2 Exponentially Weighted Moving Average (EWMA)
+
+The Exponentially Weighted Moving Average is a time series smoothing method that assigns exponentially decreasing weights to older observations, enabling adaptive tracking of the current process level [13]. Originally introduced by Roberts (1959) for statistical quality control and comprehensively analyzed by Lucas and Saccucci [13], EWMA has been widely adopted in process monitoring, financial time series analysis, and network anomaly detection [13, 14].
+
+The EWMA statistic at time $t$ is defined as:
 
 $$\hat{\mu}_t = \alpha \cdot x_t + (1 - \alpha) \cdot \hat{\mu}_{t-1}$$
 
-where x_t is the observed value at time t, mu_hat_t is the EWMA value at time t, and alpha is the smoothing factor in the range (0, 1]. In anomaly detection, EWMA is used to estimate the baseline anomaly score level, from which a threshold is derived.
+where $x_t$ is the observed value (anomaly score) at time $t$, $\hat{\mu}_t$ is the smoothed estimate at time $t$, $\hat{\mu}_0$ is initialized to the mean of the training anomaly scores, and $\alpha \in (0, 1]$ is the smoothing parameter that controls the tradeoff between responsiveness to recent observations and stability against noise [13].
 
-**Adaptive Percentile.** The Adaptive Percentile method determines the threshold based on the percentile of the anomaly score distribution within a sliding time window. Instead of assuming a normal distribution as EWMA does, this method directly uses the empirical distribution of the data [42]. The threshold is defined as the q-th percentile of the most recent W anomaly scores: threshold_t = P_q(S_W). The advantage is that it requires no distributional assumptions and naturally adapts to changes in the data distribution. The disadvantage is the need to store data within the window and sensitivity to the window size W.
+The variance of the EWMA statistic is:
 
-**The hybrid EWMA-Adaptive Percentile method.** This research proposes combining EWMA and Adaptive Percentile to leverage the strengths of both approaches: EWMA provides smoothing and long-term trend tracking, while Adaptive Percentile accurately reflects the actual short-term distribution. This combined approach allows the system to maintain stability from EWMA while remaining responsive to local changes from Adaptive Percentile. The superiority of hybrid methods over individual methods has been demonstrated in network security monitoring research [43].
+$$\text{Var}(\hat{\mu}_t) = \sigma^2 \cdot \frac{\alpha}{2 - \alpha} \cdot \left[1 - (1 - \alpha)^{2t}\right]$$
 
-[Figure 2.2: Illustration of static threshold vs. dynamic threshold (EWMA, Adaptive Percentile, and hybrid) on the same anomaly score series]
+which converges to $\sigma^2 \cdot \frac{\alpha}{2 - \alpha}$ as $t \to \infty$ [13]. Control limits (thresholds) are typically set at $\hat{\mu}_t \pm L \cdot \sqrt{\text{Var}(\hat{\mu}_t)}$, where $L$ is a multiplier (commonly 2.5--3.0) determined by the desired false alarm rate [13, 14].
 
-### 2.1.7 The ELK Stack for Security Monitoring
+Lucas and Saccucci [13] demonstrated that EWMA control charts are particularly effective at detecting small, persistent shifts in the process mean---precisely the type of signal generated by slow brute-force attacks that produce a gradual, sustained elevation in anomaly scores. Montgomery [14] provides a comprehensive treatment of EWMA in the broader context of statistical quality control and discusses the selection of $\alpha$ and $L$ for different detection objectives.
 
-The ELK Stack is a trio of open-source tools developed by Elastic N.V., comprising Elasticsearch, Logstash, and Kibana. Widely used in log management and data analytics, the ELK Stack has become a standard platform for Security Information and Event Management (SIEM) and network security monitoring [44].
+### 2.9.3 Adaptive Percentile Method
 
-**Elasticsearch** is a distributed search and analytics engine based on Apache Lucene. It stores data as JSON documents and supports full-text search, aggregation, and real-time analysis. Its distributed architecture with sharding and replication ensures scalability and high availability [45].
+The Adaptive Percentile method determines the threshold based on the empirical quantile of the anomaly score distribution within a sliding time window [14, 17]. The threshold at time $t$ is defined as:
 
-**Logstash** is a server-side data processing pipeline capable of simultaneously collecting data from multiple sources (inputs), transforming and enriching data (filters), and routing to multiple destinations (outputs). Logstash supports over 200 plugins for inputs, filters, and outputs, including log file reading, parsing with Grok patterns, and sending data to Elasticsearch [46].
+$$\theta_t = P_q(S_W)$$
 
-**Kibana** is a data visualization and exploration platform providing a web interface for interacting with data in Elasticsearch. Kibana supports creating dashboards, charts, maps, and alerts for real-time security monitoring [47].
+where $P_q$ denotes the $q$-th percentile and $S_W = \{s_{t-W+1}, s_{t-W+2}, \ldots, s_t\}$ is the set of the most recent $W$ anomaly scores [14]. This approach has two key advantages: it requires no distributional assumptions about the anomaly scores (unlike EWMA, which implicitly assumes approximate normality for the control limit calculation), and it naturally adapts to changes in the score distribution by continuously updating the reference window [17]. The primary disadvantage is sensitivity to the window size $W$: too small a window results in volatile thresholds, while too large a window reduces responsiveness to genuine distributional shifts [14].
 
-Gonzalez et al. [48] demonstrated the effectiveness of the ELK Stack for SSH log analysis with the ability to process millions of events per day. Chuvakin et al. [49] showed that the ELK Stack can replace expensive commercial SIEM solutions for small and medium-sized organizations. The integration of machine learning models with the ELK Stack can be accomplished through Elastic's built-in Machine Learning module in X-Pack [50], or through custom pipelines --- the approach adopted in this research --- where data is retrieved from Elasticsearch via API, processed and feature-extracted using Python, fed into the Isolation Forest model for anomaly scoring, and results are written back to Elasticsearch for visualization in Kibana.
+### 2.9.4 Hybrid EWMA-Adaptive Percentile Method
 
-[Figure 2.3: Architecture for integrating AI models with the ELK Stack for SSH monitoring]
+This thesis proposes a hybrid dynamic thresholding mechanism that combines EWMA and Adaptive Percentile to leverage the complementary strengths of both approaches [13, 14]. EWMA provides long-term trend tracking and smoothing, preventing the threshold from oscillating in response to transient score fluctuations. Adaptive Percentile provides distribution-free adaptiveness, accurately reflecting the empirical score distribution without parametric assumptions. The hybrid threshold is computed as a weighted combination:
 
-### 2.1.8 International Research
+$$\theta_t^{\text{hybrid}} = w_{\text{EWMA}} \cdot \theta_t^{\text{EWMA}} + w_{\text{AP}} \cdot \theta_t^{\text{AP}}$$
 
-**Najafabadi et al. (2015)** [51] investigated SSH brute-force attack detection using aggregated NetFlow data. The authors employed a Random Forest classifier on the CERT NetFlow dataset and achieved 99% accuracy in distinguishing normal from attack SSH traffic. However, the study used supervised learning with fully labeled data, and features were extracted from NetFlow (network-layer data) rather than SSH logs (application-layer data), limiting the ability to detect sophisticated application-layer attacks.
+where $\theta_t^{\text{EWMA}}$ is the EWMA-based threshold, $\theta_t^{\text{AP}}$ is the Adaptive Percentile threshold, and $w_{\text{EWMA}} + w_{\text{AP}} = 1$ are the blending weights [13, 14]. The specific weight values and the calibration procedure are detailed in Chapter 3 (Methodology). The hybrid approach ensures that the system maintains stable baseline tracking (from EWMA) while remaining responsive to local distributional changes (from Adaptive Percentile), a combination that is particularly valuable for detecting the gradual anomaly score elevation characteristic of slow brute-force campaigns [13, 23].
 
-**Hofstede, Pras, and Sperotto (2018)** [52] proposed an SSH Compromise Detection system using flow-based features. The study exploited flow-based features combined with Decision Tree and Naive Bayes classifiers, achieving a True Positive Rate exceeding 90%. The primary contribution was a set of flow-based features that distinguish between the brute-force phase and the post-compromise exploitation phase.
+[Figure 2.4: Comparison of static, EWMA, Adaptive Percentile, and hybrid thresholds on a simulated anomaly score time series with embedded attack periods]
 
-**Kumari and Jain (2020)** [53] studied Isolation Forest-based anomaly detection for IoT systems. The authors applied Isolation Forest on the NSL-KDD and CICIDS2017 datasets, achieving an F1-score of 89.7% on CICIDS2017. The study demonstrated the effectiveness of Isolation Forest for network anomaly detection but did not focus specifically on the SSH protocol.
+## 2.10 Related Work in SSH Brute-Force Detection
 
-**Moustafa and Slay (2016)** [54] developed the UNSW-NB15 dataset and evaluated multiple machine learning algorithms, including Isolation Forest, which achieved a Detection Rate of 83.1% with a False Alarm Rate of 14.2% on comprehensive network data.
+This section presents a systematic review of the most relevant prior studies in SSH brute-force detection, organized by methodological approach. The review encompasses both international and domestic (Vietnamese) research and identifies the specific contributions and limitations of each study relative to the objectives of this thesis.
 
-**Starov et al. (2019)** [55] proposed SSH brute-force detection based on temporal behavioral analysis, using features related to inter-attempt timing, time distribution, and authentication patterns. Results showed that temporal features significantly improved the detection of slow attacks compared to using only frequency-based features.
+### 2.10.1 Flow-Based and Network-Layer Approaches
 
-**Ahmad et al. (2021)** [56] conducted a comprehensive study of network anomaly detection methods, comparing Isolation Forest, LOF, OCSVM, and Autoencoders across multiple datasets. Results indicated that Isolation Forest achieved the best balance between detection performance and processing time.
+Sperotto et al. [15] conducted pioneering work on flow-based intrusion detection for SSH, analyzing network flow records from the University of Twente (Netherlands) to characterize SSH attack patterns. The study identified that flow-level features---including flow duration, packet count, and byte count---provide sufficient information to distinguish between legitimate SSH sessions and brute-force attacks with greater than 90% accuracy using Hidden Markov Models. The primary contribution was the demonstration that application-layer payload inspection is unnecessary for SSH attack detection; metadata features alone are sufficient [15]. However, the study employed supervised classification requiring labeled data, and the flow-based feature set does not capture application-layer behavioral nuances such as username diversity or password retry patterns that are available from authentication logs [15, 24].
 
-**Sperotto et al. (2017)** [57] studied SSH brute-force attacks in the real-world network environment of the University of Twente (Netherlands), analyzing over 14 million SSH events. The study identified characteristic behavioral patterns of brute-force attacks and proposed a Hidden Markov Model-based classification method.
+Hellemons et al. [5] developed SSHCure, a three-phase detection system that models SSH attacks as a sequence of scanning, brute-force, and compromise phases, each characterized by distinct flow-level features. SSHCure achieved high detection rates (>95% true positive rate) for attacks that follow the canonical three-phase pattern [5]. The key limitation is the assumption of sequential phase progression, which does not hold for all attack variants---particularly credential-stuffing attacks that skip the scanning phase and slow brute-force attacks that blur the boundary between phases [5, 23].
 
-**Satoh et al. (2022)** [58] proposed an SSH attack detection system using Deep Learning (LSTM-Autoencoder) with early detection capability, achieving a Recall of 97.2% with an average detection time of 45 seconds before attack escalation. However, the Deep Learning model requires significantly greater computational resources than traditional methods.
+### 2.10.2 Machine Learning Approaches on Benchmark Datasets
 
-### 2.1.9 Domestic Research (Vietnam)
+Ahmad et al. [25] conducted a systematic study of network-based intrusion detection systems (NIDS), comparing multiple machine learning algorithms including Isolation Forest, LOF, OCSVM, Random Forest, and deep learning approaches across the NSL-KDD, CICIDS2017, and UNSW-NB15 benchmark datasets. The study found that Isolation Forest achieved the best balance between detection performance and computational efficiency among unsupervised methods, with F1-scores ranging from 82% to 91% depending on the dataset [25]. However, the study evaluated algorithms on general network intrusion data rather than SSH-specific data, and the benchmark datasets---while valuable for standardized comparison---are known to suffer from age-related limitations, as documented by Ring et al. [24].
 
-**Nguyen Van Thang and Tran Minh Quang (2021)** [59] studied the application of machine learning in network intrusion detection in Vietnam, using Random Forest and XGBoost on the CICIDS2017 dataset. The study achieved 98.5% accuracy but focused on general network intrusion detection, not SSH brute-force specifically.
+Ring et al. [24] provided a comprehensive survey of datasets for network-based intrusion detection systems, evaluating 34 datasets across criteria including realism, labeling accuracy, attack diversity, and temporal currency. The survey concluded that many widely used benchmark datasets (including NSL-KDD, first released in 1999) do not adequately represent modern attack characteristics, and recommended the use of application-specific datasets collected from controlled environments or honeypots for domain-focused research [24]. This recommendation directly motivates the use of honeypot-collected data in this thesis.
 
-**Le Hai Viet et al. (2022)** [60] proposed a network security monitoring system using the ELK Stack for small and medium enterprises in Vietnam. The study provided practical ELK Stack deployment experience and identified performance and configuration challenges in the Vietnamese context.
+Goldstein and Uchida [20] performed a comparative evaluation of unsupervised anomaly detection algorithms on 10 benchmark datasets, including network intrusion data. Their results showed that Isolation Forest ranked among the top three algorithms in average performance across all datasets, with LOF and OCSVM achieving competitive performance on specific datasets but exhibiting higher variance across datasets [20]. The study confirmed that algorithm selection should be guided by domain-specific evaluation rather than reliance on a single benchmark.
 
-**Pham Ngoc Hung (2020)** [61] studied brute-force prevention solutions for SSH systems in government agencies. The research focused on traditional measures (Fail2Ban, iptables, port knocking) and evaluated their effectiveness in real-world environments. Results showed that traditional measures are effective against basic attacks but lack the capability to handle sophisticated attacks.
+### 2.10.3 SSH-Specific Machine Learning Studies
 
-**Tran Duc Khanh and Nguyen Thi Thanh Huyen (2023)** [62] studied the application of Isolation Forest in anomaly detection on system log data. The study was implemented in a centralized monitoring environment and achieved an F1-score of 85.3% on composite log data. This is one of the few studies in Vietnam using Isolation Forest for security log analysis.
+Javed and Paxson [23] studied stealthy SSH brute-forcing campaigns using data from a large academic network, identifying attacks that operate at rates as low as 1--2 attempts per hour and unfold over periods of days to weeks. The study demonstrated that these stealthy campaigns can achieve compromise rates comparable to aggressive attacks while evading all conventional detection mechanisms [23]. The key insight---that temporal behavioral features are essential for detecting low-rate attacks---directly informs the feature engineering approach of this thesis, which prioritizes temporal features (inter-attempt timing, session duration) alongside traditional frequency features.
 
-[Table 2.4: Comparative summary of related research works]
+Bezerra et al. [18] analyzed SSH attack durations using data from a distributed honeypot network and found significant heterogeneity in attack temporal profiles: attack sessions ranged from sub-second scans to multi-day campaigns, with distinct temporal signatures associated with different attack tools and botnets. The study identified inter-attempt timing regularity as a highly discriminative feature for distinguishing automated attacks from human-initiated sessions [18].
 
-| Author (Year) | Method | Data | Key Result | Limitation |
-|----------------|--------|------|------------|------------|
-| Najafabadi et al. (2015) [51] | Random Forest | CERT NetFlow | Accuracy 99% | Supervised, network layer |
-| Hofstede et al. (2018) [52] | Decision Tree, NB | Flow-based | TPR > 90% | No early prediction |
-| Kumari and Jain (2020) [53] | Isolation Forest | NSL-KDD, CICIDS2017 | F1 89.7% | Not SSH-specific |
-| Moustafa and Slay (2016) [54] | Isolation Forest | UNSW-NB15 | DR 83.1% | High FAR (14.2%) |
-| Starov et al. (2019) [55] | Temporal features | SSH logs | Improved slow detection | Static threshold |
-| Ahmad et al. (2021) [56] | IF, LOF, OCSVM, AE | Multiple | IF best balance | No system integration |
-| Sperotto et al. (2017) [57] | HMM | Real SSH | 14M events analyzed | Complex deployment |
-| Satoh et al. (2022) [58] | LSTM-Autoencoder | SSH logs | Recall 97.2% | High compute resources |
-| Nguyen & Tran (2021) [59] | RF, XGBoost | CICIDS2017 | Accuracy 98.5% | Supervised, general |
-| Tran & Nguyen (2023) [62] | Isolation Forest | System logs | F1 85.3% | Not SSH-specific |
-| **This study** | **IF + EWMA-AP** | **Honeypot + Sim** | **F1 93.74%, Recall 96.75%** | **See Section 1.5** |
+Owens and Matthews [19] conducted an early but influential analysis of SSH brute-force password characteristics using honeypot data. The study documented that the top 20 most-attempted passwords account for over 40% of all attack attempts, and that attackers exhibit strong preferences for specific username-password combinations (e.g., root/root, admin/123456) [19]. These findings inform the authentication-category features in this thesis's 14-feature set, particularly the unique username count and password diversity metrics.
 
-### 2.1.10 Summary of Research Landscape
+Park et al. [22] investigated SSH attacks targeting network infrastructure devices (routers and switches), documenting that these attacks exhibit distinct behavioral patterns compared to attacks against general-purpose servers, including different username preferences and timing profiles [22]. While this thesis focuses on server-targeted attacks, the existence of device-specific attack patterns underscores the importance of adaptive, learning-based detection approaches that can accommodate behavioral diversity without requiring explicit rules for each target type.
 
-The review of both international and domestic research reveals a rich but fragmented landscape. International research has demonstrated the effectiveness of machine learning for network intrusion detection in general and SSH brute-force detection in particular. However, the majority of studies evaluate their approaches on benchmark datasets (NSL-KDD, CICIDS, UNSW-NB15) that, while useful for standardized comparison, do not accurately represent the characteristics of modern SSH brute-force attacks as observed in real-world environments. The few studies that use real SSH data (Sperotto et al., Satoh et al.) focus on either statistical flow analysis or deep learning approaches that require substantial computational resources.
+### 2.10.4 Deep Learning and Advanced Approaches
 
-The domestic research landscape in Vietnam is considerably less developed. While there are valuable contributions in the areas of general network intrusion detection and ELK Stack deployment, the specific intersection of unsupervised anomaly detection algorithms with SSH security monitoring remains largely unexplored. This presents both a research opportunity and a practical need, given the increasing frequency of SSH-targeted attacks against Vietnamese digital infrastructure.
+Nassif et al. [21] surveyed machine learning and deep learning approaches for anomaly-based intrusion detection, finding that deep learning methods (autoencoders, LSTMs, GANs) can achieve higher detection accuracy than traditional machine learning methods on large, high-dimensional datasets. However, the survey also noted that deep learning methods require significantly more training data, computational resources, and hyperparameter tuning, and that their black-box nature complicates interpretation and debugging in security-critical applications [21]. For real-time SSH monitoring on resource-constrained environments, traditional machine learning methods such as Isolation Forest offer a more practical balance of performance and efficiency [21, 25].
 
-A critical gap that emerges from the comprehensive literature review is the absence of studies that combine all three elements: (1) modern unsupervised anomaly detection algorithms, (2) adaptive dynamic thresholding for early prediction, and (3) complete end-to-end system integration. Individual studies address one or two of these elements, but the integration of all three into a deployable system represents the novel contribution of this thesis.
+Buczak and Guven [12] provided the foundational survey of data mining and machine learning methods for cybersecurity intrusion detection, cataloging over 50 studies spanning supervised, unsupervised, and hybrid approaches. The survey identified several persistent challenges in the field: the reliance on outdated benchmark datasets, the absence of standardized evaluation methodologies, the difficulty of comparing results across studies that use different datasets and metrics, and the gap between algorithmic research and operational deployment [12]. These challenges motivate the methodological choices of this thesis, including the use of real honeypot data, the standardized evaluation framework (accuracy, precision, recall, F1, FPR), and the emphasis on end-to-end system integration.
 
-Furthermore, the review reveals a notable emphasis in the literature on supervised learning approaches, which achieve high accuracy but require comprehensive labeled datasets that are impractical to obtain in most operational settings. The semi-supervised approach adopted in this thesis --- training exclusively on normal data --- addresses this practical limitation while maintaining competitive detection performance, as demonstrated by the experimental results in Chapter 4.
+Pimentel et al. [17] reviewed novelty detection methods---a formulation closely related to semi-supervised anomaly detection---across multiple application domains including intrusion detection. The review categorized methods into probabilistic, distance-based, reconstruction-based, domain-based, and information-theoretic approaches, and identified one-class classification (including OCSVM) and isolation-based methods (including Isolation Forest) as particularly well-suited for applications where the target class (normal behavior) is well-sampled but the outlier class (attacks) is poorly characterized or entirely absent from training data [17].
 
-## 2.2 Summary of the Literature Review
+Hariri et al. [16] proposed the Extended Isolation Forest (EIF), which addresses the axis-parallel bias of the original algorithm by using random hyperplane splits. EIF demonstrated improved anomaly detection accuracy on synthetic datasets with complex geometric structures. However, for the tabular feature data characteristic of SSH log analysis, the performance difference between IF and EIF is marginal, and the original IF's lower computational cost and simpler implementation make it the preferred choice for real-time applications [16, 20].
 
-The comprehensive review of existing literature reveals five distinct gaps in the current state of knowledge regarding SSH brute-force attack detection:
+[Table 2.4: Comprehensive comparison of related works in SSH brute-force detection]
 
-**Gap 1: Lack of end-to-end integration.** The majority of existing studies focus on algorithmic development and evaluation without addressing the practical challenge of full integration from data collection, through feature extraction and anomaly detection, to automated response. The research-to-deployment gap remains a significant barrier to practical AI adoption in cybersecurity [63]. Specifically, the studies by Kumari and Jain (2020), Moustafa and Slay (2016), and Ahmad et al. (2021) all evaluated algorithms on benchmark datasets without discussing practical deployment architectures.
+| Study | Year | Method | Data Source | Key Metric | Dynamic Threshold | Early Warning | System Integration |
+|-------|------|--------|-------------|------------|------------------|---------------|-------------------|
+| Hellemons et al. [5] | 2012 | SSHCure (three-phase) | Flow data | TPR > 95% | No | Partial | No |
+| Sperotto et al. [15] | 2010 | HMM (flow-based) | Univ. Twente flows | Acc > 90% | No | No | No |
+| Javed & Paxson [23] | 2013 | Statistical analysis | Academic network | -- | No | Yes (analysis) | No |
+| Owens & Matthews [19] | 2008 | Password analysis | Honeypot | -- | No | No | No |
+| Bezerra et al. [18] | 2019 | Temporal analysis | Distributed honeypot | -- | No | No | No |
+| Goldstein & Uchida [20] | 2016 | IF, LOF, OCSVM (comparison) | 10 benchmarks | AUC varies | No | No | No |
+| Nassif et al. [21] | 2021 | ML/DL survey | Multiple | Survey | No | No | No |
+| Park et al. [22] | 2020 | SSH on routers | Router logs | -- | No | No | No |
+| Ahmad et al. [25] | 2021 | Multiple ML | NSL-KDD, CICIDS | F1 82--91% | No | No | No |
+| Ring et al. [24] | 2019 | Dataset survey | 34 datasets | Survey | N/A | N/A | N/A |
+| Hariri et al. [16] | 2019 | Extended IF | Synthetic + real | AUC improved | No | No | No |
+| **This thesis** | **2026** | **IF + EWMA-AP** | **Honeypot + Sim (174K lines)** | **F1 = 93.74%** | **Yes (hybrid)** | **Yes** | **Yes (9 Docker services)** |
 
-**Gap 2: Limitations of detection thresholds.** Research employing anomaly detection methods typically applies static or fixed thresholds based on the training distribution. The investigation and deployment of adaptive dynamic thresholding mechanisms --- particularly hybrid approaches combining multiple methods --- in the context of SSH attack detection remains very limited. Starov et al. (2019) identified this issue but did not propose a specific dynamic threshold solution.
+## 2.11 Summary of the Literature Review
 
-**Gap 3: Insufficient exploitation of early prediction.** Although some studies mention early detection capabilities (Satoh et al., 2022), the majority of systems continue to operate in a reactive mode --- detecting and blocking attacks after they have occurred. The potential of using behavioral features within short time windows to predict attack intent before escalation has not been adequately explored.
+The comprehensive review of the literature reveals a rich but fragmented research landscape characterized by significant methodological advances in individual components---anomaly detection algorithms, feature engineering, threshold mechanisms---but a persistent absence of integrated solutions that combine these components into deployable systems [7, 12, 15].
 
-**Gap 4: Lack of evaluation on real-world attack data.** Many studies use aging benchmark datasets (NSL-KDD, CICIDS) that do not accurately reflect the characteristics of modern SSH brute-force attacks. The use of honeypot data to collect realistic attack samples for model training and evaluation remains uncommon.
+**On algorithms:** Isolation Forest [8, 9] has emerged as one of the most effective unsupervised anomaly detection algorithms for network security applications, offering a compelling combination of detection performance, computational efficiency, and interpretability [20, 21]. LOF [10] provides complementary local-density-based detection but is limited by computational complexity and memory requirements. OCSVM [11] offers strong theoretical foundations but requires careful hyperparameter tuning and has higher computational costs. All three algorithms have been validated on benchmark datasets, but their comparative evaluation on real-world SSH honeypot data in a semi-supervised configuration remains underexplored [20, 24, 25].
 
-**Gap 5: Limited domestic research.** The number of studies in Vietnam on the application of AI to SSH attack detection is very small. Existing research primarily focuses on traditional measures or general network intrusion detection, without in-depth investigation of combining modern anomaly detection algorithms with integrated security monitoring systems for SSH.
+**On features:** The literature consistently identifies temporal features (inter-attempt timing, session duration) as more discriminative than frequency features (attempt counts) for distinguishing automated SSH attacks from legitimate activity, particularly for slow-rate and stealthy attack variants [5, 15, 18, 23]. Authentication features (username diversity, password patterns) provide additional discriminative power for credential-stuffing and dictionary attacks [19]. The integration of features from all four categories (frequency, temporal, authentication, connection) in a unified feature set has been recommended but rarely implemented and evaluated systematically [12, 15].
 
-## 2.3 Contribution of Research
+**On thresholds:** Static thresholds are inadequate for SSH monitoring due to the non-stationary nature of authentication traffic [6, 7, 13]. EWMA-based adaptive thresholds offer superior sensitivity to small, persistent shifts [13, 14], while percentile-based methods provide distribution-free adaptiveness [14, 17]. Hybrid approaches combining multiple threshold methods have been proposed in the statistical process control literature [13, 14] but have not been applied to SSH anomaly detection.
 
-Based on the identified research gaps, this thesis makes the following contributions:
+**On integration:** The gap between algorithmic research and deployable systems remains one of the most significant barriers to the practical adoption of machine learning in cybersecurity [12, 15]. The vast majority of studies evaluate algorithms in isolation on benchmark datasets without addressing log ingestion, real-time feature extraction, automated response, visualization, or containerized deployment [20, 21, 24, 25].
 
-**Contribution 1: End-to-end integrated system.** This research designs and implements a complete system architecture spanning SSH log collection (via the ELK Stack), feature extraction (14 features per IP per 5-minute window), anomaly detection (Isolation Forest), and automated response (Fail2Ban). The entire system is containerized with Docker, directly addressing the end-to-end integration gap.
+## 2.12 Research Gap and Contribution
 
-**Contribution 2: Hybrid dynamic thresholding mechanism.** The thesis proposes and implements the EWMA-Adaptive Percentile hybrid dynamic threshold method, enabling the system to automatically adjust its detection threshold according to the evolving characteristics of SSH traffic. This contribution addresses the gap in adaptive threshold methods for SSH attack detection.
+Based on the literature review, four specific research gaps are identified that collectively define the novel contribution of this thesis:
 
-**Contribution 3: Early prediction capability.** The set of 14 behavioral features is designed to capture attack indicators from the earliest stages of an attack (the reconnaissance and initial probing phases), and the 5-minute time window combined with the two-level detection mechanism (EARLY_WARNING at 67% of the ALERT threshold) enables the identification of attack intent before a full-scale attack materializes. In the low-and-slow scenario, the system issues an early warning after only 3-5 attempts (approximately 2-3 minutes).
+**Gap 1: Absence of comparative algorithm evaluation on real SSH honeypot data.** While Isolation Forest, LOF, and OCSVM have been extensively compared on benchmark datasets [20, 25], their comparative performance on authentic SSH honeypot data---with its characteristic noise, class imbalance (679 attacking IPs versus 64 normal users), and behavioral diversity (five attack variants)---has not been systematically evaluated in a semi-supervised configuration [24]. **Contribution:** This thesis provides a rigorous comparative evaluation of all three algorithms on 174,250 lines of combined honeypot and simulated data, reporting standardized metrics (accuracy, precision, recall, F1, FPR) with optimized results: IF (Acc = 90.31%, F1 = 93.74%, FPR = 29.00%), LOF (Acc = 83.22%, F1 = 89.94%), OCSVM (Acc = 91.38%, F1 = 94.55%).
 
-**Contribution 4: Evaluation on real-world data.** The study uses real-world attack data from a honeypot (119,729 log lines from 679 IPs) combined with simulated normal behavior data (54,521 log lines from 64 users), providing an evaluation that is more representative of real operational conditions than benchmark datasets.
+**Gap 2: No hybrid dynamic thresholding for SSH anomaly detection.** EWMA [13] and percentile-based thresholds [14] have been studied independently, but their combination into a hybrid mechanism specifically designed for SSH anomaly detection has not been previously proposed or evaluated [7, 12]. Existing SSH detection systems rely on either static thresholds [6] or simple adaptive mechanisms without the complementary strengths of trend-following and distribution-free approaches [5, 15]. **Contribution:** This thesis proposes and validates the EWMA-Adaptive Percentile hybrid thresholding mechanism, demonstrating its effectiveness across five attack scenarios with varying temporal profiles [13, 14].
 
-**Contribution 5: Systematic algorithm comparison.** The thesis provides a systematic comparative evaluation of Isolation Forest (optimized: Acc=90.31%, F1=93.74%, Recall=96.75%, FPR=29.00%), LOF (Acc=83.22%, F1=89.94%, Recall=100%, FPR=67.10%), and One-Class SVM (Acc=91.38%, F1=94.55%, Recall=99.65%, FPR=33.42%) on the same real-world SSH dataset, contributing to the understanding of anomaly detection algorithm performance in this specific domain.
+**Gap 3: Limited exploitation of early-warning capability.** While some studies have identified the potential for early detection based on behavioral features [5, 23], the systematic exploitation of early-phase behavioral signatures for proactive attack warning---particularly for slow-rate attacks---remains largely unexplored [18, 23]. **Contribution:** This thesis demonstrates early-warning capability across all five attack scenarios, with the system issuing EARLY_WARNING alerts after only 3--5 attempts in the slow brute-force scenario, compared to complete detection failure by Fail2Ban under default settings.
 
-**Contribution 6: Reference for the domestic community.** As one of the few studies in Vietnam combining modern AI with SSH security monitoring, this thesis provides a valuable reference for domestic research and practical deployment. The detailed documentation of the methodology, architecture, and experimental results is intended to facilitate reproducibility and extension by other researchers, particularly within the Information Assurance programs at Vietnamese universities.
+**Gap 4: Research-to-deployment gap.** The overwhelming majority of studies in this domain evaluate algorithms in isolation without addressing system integration [12, 20, 21, 25]. **Contribution:** This thesis implements a complete end-to-end system comprising 9 Docker services (ELK Stack, FastAPI, React, Fail2Ban), with a 14-feature extraction pipeline processing SSH logs in 5-minute sliding windows, demonstrating that the transition from algorithm to deployable system is achievable within a modern containerized architecture [6, 15].
 
-**Contribution 7: Methodological framework for semi-supervised SSH security.** Beyond the specific algorithmic and system contributions, this thesis establishes a methodological framework for applying semi-supervised anomaly detection to SSH security that can be adapted to related problems. The framework encompasses: data collection strategies (combining honeypot and simulation data), labeling strategies for semi-supervised training, behavioral feature engineering over sliding time windows, model selection criteria that account for both detection performance and operational requirements (computational efficiency, score distribution properties), and dynamic thresholding for real-time deployment. This framework is generalizable to brute-force detection on other protocols (FTP, RDP, SMTP) with appropriate modifications to the parser and feature set.
+[Figure 2.5: Visual mapping of research gaps to the contributions of this thesis]
 
-The research is positioned at the intersection of three domains: (1) Cybersecurity, specifically the detection and prevention of SSH brute-force attacks; (2) Machine Learning, specifically unsupervised anomaly detection with Isolation Forest; and (3) Systems Engineering, specifically the integration of the ELK Stack, Docker, and Fail2Ban. This interdisciplinary combination constitutes the novelty and practical value of the research, distinguishing it from prior works that primarily focus on one or two of these domains.
+[Table 2.5: Summary of research gaps, their evidence in the literature, and corresponding contributions]
 
-[Figure 2.4: Venn diagram showing the research positioning at the intersection of three domains]
-
----
-
-## References for Chapter 2
-
-[1] T. Ylonen, "SSH -- Secure Login Connections over the Internet," in *Proc. 6th USENIX Security Symposium*, 1996, pp. 37-42.
-
-[2] T. Ylonen and C. Lonvick, "The Secure Shell (SSH) Protocol Architecture," RFC 4251, *IETF*, 2006.
-
-[3] D. J. Barrett, R. E. Silverman, and R. G. Byrnes, *SSH, The Secure Shell: The Definitive Guide*, 2nd ed., O'Reilly Media, 2005.
-
-[4] T. Ylonen and C. Lonvick, "The Secure Shell (SSH) Authentication Protocol," RFC 4252, *IETF*, 2006.
-
-[5] T. Ylonen and C. Lonvick, "The Secure Shell (SSH) Connection Protocol," RFC 4254, *IETF*, 2006.
-
-[6] OpenSSH, "sshd_config -- OpenSSH SSH daemon configuration file," *OpenBSD Manual Pages*, https://man.openbsd.org/sshd_config.
-
-[7] D. Florencio and C. Herley, "A large-scale study of web password habits," in *Proc. 16th International Conference on World Wide Web*, 2007, pp. 657-666.
-
-[8] M. Durmuth, T. Kranz, and M. Mannan, "On the real-world effectiveness of SSH brute-force attacks," in *Proc. NDSS Workshop on Usable Security (USEC)*, 2015.
-
-[9] A. Sperotto, G. Schaffrath, R. Sadre, C. Morariu, A. Pras, and B. Stiller, "An overview of IP flow-based intrusion detection," *IEEE Communications Surveys & Tutorials*, vol. 12, no. 3, pp. 343-356, 2010.
-
-[10] M. Bishop, "A taxonomy of password attacks," in *Computer Security Applications Conference*, 1995.
-
-[11] J. Owens and J. Matthews, "A study of passwords and methods used in brute-force SSH attacks," in *Proc. USENIX Workshop on Large-Scale Exploits and Emergent Threats (LEET)*, 2008.
-
-[12] D. Wang, Z. Zhang, P. Wang, J. Yan, and X. Huang, "Targeted online password guessing: An underestimated threat," in *Proc. ACM CCS*, 2016, pp. 1242-1254.
-
-[13] B. Cheswick and S. M. Bellovin, *Firewalls and Internet Security: Repelling the Wily Hacker*, 2nd ed., Addison-Wesley, 2003.
-
-[14] J. Owens and J. Matthews, "A study of passwords and methods used in brute-force SSH attacks," in *Proc. USENIX LEET*, 2008.
-
-[15] A. K. Das, J. Bonneau, M. Caesar, N. Borisov, and X. Wang, "The tangled web of password reuse," in *Proc. NDSS*, 2014.
-
-[16] D. van Heesch, "Hydra: A fast and flexible online password cracking tool," *THC Project*, https://github.com/vanhauser-thc/thc-hydra.
-
-[17] Fail2Ban, "Fail2Ban documentation," https://www.fail2ban.org/.
-
-[18] AbuseIPDB, "IP address abuse reports," https://www.abuseipdb.com/.
-
-[19] M. Roesch, "Snort: Lightweight intrusion detection for networks," in *Proc. USENIX LISA*, 1999.
-
-[20] M. Krzywinski, "Port knocking: Network authentication across closed ports," *SysAdmin Magazine*, vol. 12, pp. 12-17, 2003.
-
-[21] A. L. Buczak and E. Guven, "A survey of data mining and machine learning methods for cyber security intrusion detection," *IEEE Communications Surveys & Tutorials*, vol. 18, no. 2, pp. 1153-1176, 2016.
-
-[22] P. Mishra, V. Varadharajan, U. Tupakula, and E. S. Pilli, "A detailed investigation and analysis of using machine learning techniques for intrusion detection," *IEEE Communications Surveys & Tutorials*, vol. 21, no. 1, pp. 686-728, 2019.
-
-[23] M. Ahmed, A. N. Mahmood, and J. Hu, "A survey of network anomaly detection techniques," *Journal of Network and Computer Applications*, vol. 60, pp. 19-31, 2016.
-
-[24] G. Pang, C. Shen, L. Cao, and A. Van Den Hengel, "Deep learning for anomaly detection: A review," *ACM Computing Surveys*, vol. 54, no. 2, pp. 1-38, 2021.
-
-[25] V. Kumar, "Parallel and distributed computing for cybersecurity," *IEEE Distributed Systems Online*, vol. 6, no. 10, 2005.
-
-[26] V. Chandola, A. Banerjee, and V. Kumar, "Anomaly detection: A survey," *ACM Computing Surveys*, vol. 41, no. 3, pp. 1-58, 2009.
-
-[27] R. Sommer and V. Paxson, "Outside the closed world: On using machine learning for network intrusion detection," in *Proc. IEEE Symposium on Security and Privacy*, 2010, pp. 305-316.
-
-[28] K. Leung and C. Leckie, "Unsupervised anomaly detection in network intrusion detection using clusters," in *Proc. Australasian Computer Science Conference*, 2005, pp. 333-342.
-
-[29] F. T. Liu, K. M. Ting, and Z.-H. Zhou, "Isolation-based anomaly detection," *ACM Transactions on Knowledge Discovery from Data*, vol. 6, no. 1, pp. 1-39, 2012.
-
-[30] S. Hariri, M. C. Kind, and R. J. Brunner, "Extended Isolation Forest," *IEEE Transactions on Knowledge and Data Engineering*, vol. 33, no. 4, pp. 1479-1489, 2021.
-
-[31] F. T. Liu, K. M. Ting, and Z.-H. Zhou, "Isolation Forest," in *Proc. IEEE International Conference on Data Mining (ICDM)*, 2008, pp. 413-422.
-
-[32] M. M. Breunig, H.-P. Kriegel, R. T. Ng, and J. Sander, "LOF: Identifying density-based local outliers," in *Proc. ACM SIGMOD International Conference on Management of Data*, 2000, pp. 93-104.
-
-[33] J. Tang, Z. Chen, A. W. Fu, and D. W. Cheung, "Enhancing effectiveness of outlier detections for low density patterns," in *Proc. Pacific-Asia Conference on Knowledge Discovery and Data Mining*, 2002, pp. 535-548.
-
-[34] D. Pokrajac, A. Lazarevic, and L. J. Latecki, "Incremental local outlier detection for data streams," in *Proc. IEEE Symposium on Computational Intelligence and Data Mining*, 2007, pp. 504-515.
-
-[35] B. Scholkopf, J. C. Platt, J. Shawe-Taylor, A. J. Smola, and R. C. Williamson, "Estimating the support of a high-dimensional distribution," *Neural Computation*, vol. 13, no. 7, pp. 1443-1471, 2001.
-
-[36] D. M. J. Tax and R. P. W. Duin, "Support vector data description," *Machine Learning*, vol. 54, no. 1, pp. 45-66, 2004.
-
-[37] S. S. Khan and M. G. Madden, "One-class classification: Taxonomy of study and review of techniques," *The Knowledge Engineering Review*, vol. 29, no. 3, pp. 345-374, 2014.
-
-[38] M. Goldstein and S. Uchida, "A comparative evaluation of unsupervised anomaly detection algorithms for multivariate data," *PLOS ONE*, vol. 11, no. 4, e0152173, 2016.
-
-[39] D. J. Hill and B. S. Minsker, "Anomaly detection in streaming environmental sensor data: A data-driven modeling approach," *Environmental Modelling & Software*, vol. 25, no. 9, pp. 1014-1022, 2010.
-
-[40] S. W. Roberts, "Control chart tests based on geometric moving averages," *Technometrics*, vol. 1, no. 3, pp. 239-250, 1959.
-
-[41] X. Li, F. Bian, M. Crovella, C. Diot, R. Govindan, G. Iannaccone, and A. Lakhina, "Detection and identification of network anomalies using sketch subspaces," in *Proc. ACM IMC*, 2006, pp. 147-152.
-
-[42] S. Ramaswamy, R. Rastogi, and K. Shim, "Efficient algorithms for mining outliers from large data sets," in *Proc. ACM SIGMOD*, 2000, pp. 427-438.
-
-[43] P. Casas, J. Mazel, and P. Owezarski, "Unsupervised network intrusion detection systems: Detecting the unknown without knowledge," *Computer Communications*, vol. 35, no. 7, pp. 772-783, 2012.
-
-[44] C. Gormley and Z. Tong, *Elasticsearch: The Definitive Guide*, O'Reilly Media, 2015.
-
-[45] Elastic, "Elasticsearch Reference," https://www.elastic.co/guide/en/elasticsearch/reference/current/.
-
-[46] Elastic, "Logstash Reference," https://www.elastic.co/guide/en/logstash/current/.
-
-[47] Elastic, "Kibana Guide," https://www.elastic.co/guide/en/kibana/current/.
-
-[48] D. Gonzalez, T. Hayajneh, and M. Carpenter, "ELK-based security analytics for anomaly detection in IoT environments," *IEEE Access*, vol. 9, pp. 159467-159481, 2021.
-
-[49] A. Chuvakin, K. Schmidt, and C. Phillips, *Logging and Log Management: The Authoritative Guide*, Syngress, 2012.
-
-[50] Elastic, "Machine Learning in the Elastic Stack," https://www.elastic.co/what-is/elasticsearch-machine-learning.
-
-[51] M. Najafabadi, T. Khoshgoftaar, C. Calvert, and C. Kemp, "Detection of SSH brute force attacks using aggregated netflow data," in *Proc. IEEE 14th ICMLA*, 2015, pp. 283-288.
-
-[52] R. Hofstede, A. Pras, and A. Sperotto, "Flow-based SSH compromise detection," in *Proc. IFIP/IEEE IM*, 2018.
-
-[53] P. Kumari and R. Jain, "Isolation Forest based anomaly detection for IoT systems," *Journal of King Saud University -- Computer and Information Sciences*, vol. 34, no. 8, pp. 5765-5774, 2022.
-
-[54] N. Moustafa and J. Slay, "The evaluation of Network Anomaly Detection Systems: Statistical analysis of the UNSW-NB15 data set," *Information Security Journal*, vol. 25, no. 1-3, pp. 18-31, 2016.
-
-[55] O. Starov, Y. Gill, P. Hartlieb, and P. Hartlieb, "Detecting SSH brute-force attacks using temporal behavioral analysis," in *Proc. IEEE CNS*, 2019.
-
-[56] S. Ahmad, A. Lavin, S. Purdy, and Z. Agha, "Unsupervised real-time anomaly detection for streaming data," *Neurocomputing*, vol. 262, pp. 134-147, 2017.
-
-[57] A. Sperotto, R. Sadre, F. van Vliet, and A. Pras, "A labeled data set for flow-based intrusion detection," in *Proc. IEEE IPOM*, 2009, pp. 39-50.
-
-[58] A. Satoh, Y. Nakamura, and T. Ikenaga, "SSH dictionary attack detection using deep learning," *IEEE Access*, vol. 10, pp. 23456-23467, 2022.
-
-[59] V. T. Nguyen and M. Q. Tran, "Application of machine learning in network intrusion detection," *Journal of Science and Technology -- University of Danang*, vol. 19, no. 5, pp. 45-52, 2021.
-
-[60] H. V. Le et al., "Building a network security monitoring system using ELK Stack for SMEs," *Journal of ICT*, vol. 2022, no. 3, pp. 78-85, 2022.
-
-[61] N. H. Pham, "Research on SSH brute-force prevention solutions for government information systems," *Master's Thesis, Academy of Cryptography Techniques*, 2020.
-
-[62] D. K. Tran and T. T. H. Nguyen, "Application of Isolation Forest in anomaly detection on system log data," *Journal of Scientific Research and Development*, vol. 2, no. 4, pp. 112-121, 2023.
-
-[63] R. Sommer and V. Paxson, "Outside the closed world: On using machine learning for network intrusion detection," in *Proc. IEEE Symposium on Security and Privacy*, 2010, pp. 305-316.
+| Gap | Evidence in Literature | This Thesis's Contribution |
+|-----|----------------------|---------------------------|
+| No comparative evaluation on real SSH data | Goldstein & Uchida [20] used benchmarks; Ahmad et al. [25] used general IDS datasets | IF, LOF, OCSVM compared on 174,250-line honeypot + simulation dataset |
+| No hybrid dynamic threshold for SSH | Fail2Ban [6] uses static; SSHCure [5] uses fixed phases | EWMA-Adaptive Percentile hybrid mechanism |
+| Limited early-warning exploitation | Javed & Paxson [23] identified potential; no system implemented | Early warning in 3--5 attempts for slow attacks |
+| Research-to-deployment gap | Buczak & Guven [12] and Sperotto et al. [15] identified the gap | 9-service Docker architecture with automated response |

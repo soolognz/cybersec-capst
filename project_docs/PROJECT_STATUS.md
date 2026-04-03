@@ -43,10 +43,38 @@
 - [x] Docker Compose (9 services)
 - [x] Dockerfiles for all components
 
-### Phase 9-10: Documentation - IN PROGRESS
-- [ ] Thesis report (Vietnamese + English)
-- [ ] Setup guide
-- [ ] Demo runbook
+### Phase 9-10: Documentation - MOSTLY COMPLETE
+- [x] Thesis outline (thesis_outline_vi.md)
+- [x] Chapter 1: Introduction (3,777 words)
+- [x] Chapter 2: Literature Review (9,627 words)
+- [x] Chapter 3: Methodology (6,723 words)
+- [ ] Chapter 4: Experimental Results (in progress)
+- [x] Chapter 5: Discussion (1,606 words)
+- [x] Chapter 6: Conclusion (1,088 words)
+- [x] Setup guide manual (1,123 lines, bilingual)
+- [x] Demo runbook
+- [x] Architecture diagram
+- [x] Feature dictionary
+- [x] API reference
+
+### Tests - COMPLETE
+- [x] 51/51 tests passing
+- [x] Log parser tests (12)
+- [x] Feature extractor tests (11)
+- [x] Data splitter tests (6)
+- [x] Model tests (8)
+- [x] Preprocessor tests (5)
+- [x] API tests (9)
+
+### Model Optimization - COMPLETE
+- [x] Non-overlapping windows
+- [x] 9 derived features (23 total)
+- [x] Extended hyperparameter grid search
+- [x] Contamination tuning
+
+### GitHub - PUSHED
+- [x] Repository: https://github.com/soolognz/cybersec-capst
+- [x] 3 commits on main branch
 
 ## Dataset Statistics
 - Training: 7,212 samples (100% normal from simulation)
@@ -54,12 +82,17 @@
 - Honeypot: 119,729 log lines (5 days, 679 unique IPs)
 - Simulation: 54,521 log lines (64 users, normal behavior)
 
-## Model Results Summary
-| Model | Accuracy | F1-Score | Recall | ROC-AUC |
-|-------|----------|----------|--------|---------|
-| Isolation Forest | 80.76% | 88.63% | 99.99% | 83.16% |
-| LOF | 84.15% | 90.45% | 100% | 97.59% |
-| One-Class SVM | 85.73% | 91.31% | 100% | 90.03% |
+## Model Results Summary (After Optimization)
+| Model | Accuracy | F1-Score | FPR | ROC-AUC |
+|-------|----------|----------|-----|---------|
+| **Isolation Forest** | **90.31%** | **93.74%** | **29.00%** | **86.61%** |
+| LOF | 83.22% | 89.94% | 67.10% | 65.24% |
+| One-Class SVM | 91.38% | 94.55% | 33.42% | 83.42% |
+
+### Improvement vs Baseline
+| Model | Accuracy Change | F1 Change | FPR Reduction |
+|-------|----------------|-----------|---------------|
+| IF | +9.55% | +5.11% | -47.92% |
 
 ## Top Features (by importance)
 1. session_duration_mean (5.50%)

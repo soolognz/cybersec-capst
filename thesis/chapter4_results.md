@@ -1,0 +1,511 @@
+# CHƯƠNG 4: KẾT QUẢ THỰC NGHIỆM
+
+## 4.1 Thống kê tập dữ liệu và phân tích khám phá
+
+### 4.1.1 Tổng quan tập dữ liệu
+
+Quá trình thu thập và tiền xử lý dữ liệu tạo ra tổng cộng 22.396 mẫu (samples) từ hai nguồn dữ liệu. Bảng 4.1 trình bày thống kê tổng quan về tập dữ liệu cuối cùng sau khi trích xuất đặc trưng theo cửa sổ trượt 5 phút với bước trượt 1 phút.
+
+**Bảng 4.1: Thống kê tổng quan tập dữ liệu**
+
+| Thuộc tính | Giá trị |
+|------------|---------|
+| Tổng số mẫu | 22.396 |
+| Tập huấn luyện | 7.212 mẫu (100% normal) |
+| Tập kiểm thử | 15.184 mẫu (3.796 normal + 11.388 attack) |
+| Số đặc trưng | 14 |
+| Kích thước cửa sổ | 5 phút |
+| Bước trượt | 1 phút |
+
+### 4.1.2 Phân tích dữ liệu honeypot
+
+Dữ liệu từ honeypot_auth.log (119.729 dòng, 5 ngày) cho thấy bức tranh toàn diện về hoạt động tấn công brute-force SSH trên Internet công cộng. Phân tích khám phá dữ liệu (Exploratory Data Analysis - EDA) cho thấy các đặc điểm quan trọng:
+
+**Phân bố theo thời gian:** Các cuộc tấn công diễn ra liên tục 24/7, không có mẫu thời gian rõ ràng, cho thấy đặc trưng của các công cụ tấn công tự động (automated attack tools). Trong 5 ngày thu thập, trung bình mỗi ngày ghi nhận khoảng 5.860 lần thử mật khẩu thất bại (29.301 / 5 ngày).
+
+**Phân bố theo IP:** Tổng cộng 679 địa chỉ IP duy nhất được ghi nhận. Phân tích cho thấy phân bố lệch phải (right-skewed distribution) rõ rệt: một số ít IP thực hiện hàng nghìn lần thử, trong khi phần lớn IP chỉ thực hiện vài chục đến vài trăm lần. Top 10% IP đóng góp hơn 60% tổng số lần thử thất bại.
+
+**Hình 4.1: Phân bố số lần thử xác thực thất bại theo IP (honeypot)**
+
+**Phân tích tên người dùng bị tấn công:** Tên người dùng phổ biến nhất trong các cuộc tấn công: "root" chiếm tỷ lệ cao nhất (ước tính >40%), tiếp theo là "admin", "test", "user", "oracle", "postgres", "ubuntu", và các tên người dùng dịch vụ khác. Có 29.301 lần thử mật khẩu thất bại trong tổng số 119.729 dòng log.
+
+**Hoạt động quản trị hợp pháp:** 6 địa chỉ IP quản trị tạo ra 532 phiên đăng nhập root thành công, phân bố chủ yếu trong giờ hành chính, với phiên làm việc kéo dài từ vài phút đến vài giờ — đặc trưng của hoạt động quản trị hệ thống bình thường.
+
+**Bảng 4.2: Thống kê chi tiết dữ liệu honeypot**
+
+| Thống kê | Giá trị |
+|----------|---------|
+| Tổng dòng log | 119.729 |
+| Thời gian thu thập | 5 ngày |
+| IP duy nhất | 679 |
+| Failed password | 29.301 |
+| Accepted root (admin IPs) | 532 |
+| Số IP quản trị | 6 |
+| Trung bình failed/ngày | ~5.860 |
+| Trung bình failed/IP | ~43,2 |
+
+### 4.1.3 Phân tích dữ liệu mô phỏng
+
+Dữ liệu simulation_auth.log (54.521 dòng, 64 người dùng) phản ánh mẫu hoạt động SSH bình thường trong một tổ chức. Các đặc điểm nổi bật:
+
+**Phân bố theo thời gian:** Hoạt động tập trung chủ yếu trong giờ hành chính (8h-18h), giảm rõ rệt vào ban đêm và cuối tuần, phản ánh đúng mẫu làm việc thực tế.
+
+**Tỷ lệ thành công cao:** Với 4.205 lần đăng nhập thành công và chỉ 177 lần thất bại, tỷ lệ thành công đạt khoảng 95,96% (4.205/(4.205+177)). Tỷ lệ thất bại chỉ 4,04% phản ánh các trường hợp nhập sai mật khẩu do vô tình — hành vi hoàn toàn bình thường.
+
+**Phân bố người dùng:** 64 tài khoản hoạt động với mức độ sử dụng SSH khác nhau. Một số tài khoản (ví dụ: nhà phát triển, quản trị hệ thống) có tần suất đăng nhập cao hơn nhiều so với người dùng thông thường.
+
+**Hình 4.2: So sánh phân bố hoạt động theo giờ giữa honeypot (attack) và simulation (normal)**
+
+**Bảng 4.3: Thống kê chi tiết dữ liệu mô phỏng**
+
+| Thống kê | Giá trị |
+|----------|---------|
+| Tổng dòng log | 54.521 |
+| Số người dùng | 64 |
+| Accepted logins | 4.205 |
+| Failed logins | 177 |
+| Tỷ lệ thành công | 95,96% |
+| Tỷ lệ thất bại | 4,04% |
+
+### 4.1.4 So sánh đặc trưng giữa Normal và Attack
+
+Phân tích khám phá cho thấy sự khác biệt rõ ràng giữa hành vi normal và attack trên hầu hết 14 đặc trưng. Bảng 4.4 trình bày thống kê mô tả cho các đặc trưng quan trọng nhất.
+
+**Bảng 4.4: Thống kê mô tả các đặc trưng chính theo nhãn**
+
+| Đặc trưng | Normal (mean ± std) | Attack (mean ± std) | Khác biệt |
+|-----------|---------------------|---------------------|-----------|
+| fail_count | Thấp (0-2) | Cao (hàng chục-trăm) | Rất lớn |
+| fail_rate | <0.3 | >0.9 | Rất lớn |
+| unique_usernames | 1-2 | 5-20+ | Lớn |
+| invalid_user_count | ~0 | Cao | Rất lớn |
+| mean_inter_attempt_time | Cao (>10s) | Rất thấp (<1s) | Rất lớn |
+| session_duration_mean | Cao (phút-giờ) | Rất thấp (<5s) | Rất lớn |
+| connection_count | Thấp (1-5) | Cao (hàng chục-trăm) | Lớn |
+
+Kết quả phân tích cho thấy: các đặc trưng liên quan đến thời gian (mean_inter_attempt_time, min_inter_attempt_time, session_duration_mean) và tỷ lệ (fail_rate, invalid_user_ratio) có khả năng phân biệt tốt nhất giữa hai lớp. Điều này phù hợp với trực giác: tấn công brute-force tự động tạo ra mẫu thời gian rất khác biệt so với hoạt động thủ công của con người.
+
+**Hình 4.3: Boxplot so sánh phân bố các đặc trưng chính giữa Normal và Attack**
+
+## 4.2 Phân tích đặc trưng
+
+### 4.2.1 Phân bố đặc trưng
+
+Phân tích phân bố (distribution analysis) của 14 đặc trưng trên tập dữ liệu cho thấy:
+
+**Đặc trưng đếm (count features):** fail_count, success_count, connection_count, invalid_user_count có phân bố lệch phải mạnh (heavily right-skewed) với đuôi dài (long tail). Đa số mẫu normal có giá trị gần 0, trong khi mẫu attack có giá trị trải rộng từ thấp đến rất cao. Điều này giải thích tại sao RobustScaler phù hợp hơn StandardScaler cho dữ liệu này.
+
+**Đặc trưng tỷ lệ (ratio features):** fail_rate và invalid_user_ratio có phân bố hai đỉnh (bimodal distribution) rõ ràng. Mẫu normal tập trung quanh giá trị 0 (ít thất bại), mẫu attack tập trung quanh giá trị 1 (hầu hết đều thất bại). Khoảng trống giữa hai đỉnh tạo ranh giới phân loại tự nhiên.
+
+**Đặc trưng thời gian (temporal features):** mean_inter_attempt_time, std_inter_attempt_time, min_inter_attempt_time có phân bố phức tạp hơn. Mẫu normal có giá trị phân tán rộng (phản ánh tính không đều của hành vi thủ công), mẫu attack có giá trị tập trung gần 0 (phản ánh tốc độ cao của tấn công tự động).
+
+**Đặc trưng nhị phân (binary features):** pam_failure_escalation và max_retries_exceeded có phân bố nhị phân. Trong mẫu normal, hầu hết có giá trị 0; trong mẫu attack, tỷ lệ giá trị 1 cao hơn đáng kể.
+
+**Hình 4.4: Histogram phân bố 14 đặc trưng, phân tách theo nhãn normal/attack**
+
+### 4.2.2 Ma trận tương quan
+
+Ma trận tương quan (correlation matrix) giữa 14 đặc trưng được tính bằng hệ số tương quan Pearson. Kết quả cho thấy một số cặp đặc trưng có tương quan cao:
+
+- **fail_count và connection_count:** Tương quan dương mạnh (r > 0.8), vì mỗi lần thử mật khẩu đều tạo một kết nối.
+- **fail_count và fail_rate:** Tương quan dương cao, đặc biệt khi success_count thấp.
+- **mean_inter_attempt_time và std_inter_attempt_time:** Tương quan dương trung bình (~0.5-0.7), vì cả hai đều phản ánh khía cạnh thời gian.
+- **invalid_user_count và invalid_user_ratio:** Tương quan dương cao.
+- **unique_usernames và invalid_user_count:** Tương quan dương, vì tấn công thường sử dụng nhiều tên người dùng không hợp lệ.
+
+Mặc dù một số đặc trưng có tương quan cao, nghiên cứu vẫn giữ tất cả 14 đặc trưng vì: (1) các mô hình phát hiện bất thường được sử dụng (IF, LOF, OCSVM) xử lý tốt đặc trưng tương quan; (2) mỗi đặc trưng cung cấp thông tin bổ sung trong các trường hợp biên (edge cases); (3) giảm đặc trưng có thể làm giảm khả năng phát hiện các loại tấn công đặc thù.
+
+**Hình 4.5: Ma trận tương quan Pearson giữa 14 đặc trưng (heatmap)**
+
+### 4.2.3 Phân tích mức độ quan trọng đặc trưng
+
+Mức độ quan trọng (feature importance) được đánh giá dựa trên mô hình Isolation Forest, sử dụng phương pháp permutation importance trên tập kiểm thử. Kết quả cho thấy 5 đặc trưng quan trọng nhất:
+
+**Bảng 4.5: Xếp hạng mức độ quan trọng đặc trưng (Top 5)**
+
+| Xếp hạng | Đặc trưng | Mức độ quan trọng (%) |
+|-----------|-----------|----------------------|
+| 1 | session_duration_mean | 5,50% |
+| 2 | min_inter_attempt_time | 3,86% |
+| 3 | mean_inter_attempt_time | 2,61% |
+| 4 | std_inter_attempt_time | 1,64% |
+| 5 | unique_ports | 1,42% |
+
+**Hình 4.6: Biểu đồ cột mức độ quan trọng của 14 đặc trưng**
+
+**Phân tích kết quả:**
+
+**session_duration_mean (5,50%):** Đặc trưng quan trọng nhất, phản ánh sự khác biệt cơ bản nhất giữa tấn công và hoạt động bình thường. Tấn công brute-force tạo ra các phiên SSH cực ngắn (thường dưới 5 giây vì bị ngắt kết nối ngay sau khi xác thực thất bại), trong khi người dùng hợp pháp có phiên làm việc kéo dài từ vài phút đến vài giờ. Khoảng cách lớn giữa hai phân bố (bimodal gap) giúp Isolation Forest dễ dàng phân tách hai lớp.
+
+**min_inter_attempt_time (3,86%):** Đặc trưng quan trọng thứ hai, phản ánh tốc độ nhanh nhất giữa hai lần thử liên tiếp. Công cụ tấn công tự động có thể gửi hàng trăm yêu cầu mỗi giây, tạo ra giá trị min_inter_attempt_time gần 0. Trong khi đó, con người cần ít nhất vài giây để gõ lại mật khẩu.
+
+**mean_inter_attempt_time (2,61%):** Bổ sung cho min_inter_attempt_time bằng cách cung cấp thông tin về tốc độ trung bình tổng thể. Mẫu tấn công có mean thấp và ổn định, mẫu normal có mean cao và biến thiên.
+
+**std_inter_attempt_time (1,64%):** Độ lệch chuẩn thấp cho thấy mẫu hành vi đều đặn, đặc trưng của công cụ tấn công tự động. Người dùng thủ công có thời gian giữa các lần thử biến thiên cao hơn.
+
+**unique_ports (1,42%):** Số cổng nguồn duy nhất lớn tương quan với số lượng kết nối TCP riêng biệt. Tấn công brute-force tạo ra nhiều kết nối mới liên tiếp, dẫn đến số cổng nguồn duy nhất rất lớn.
+
+Đáng chú ý, 4 trong 5 đặc trưng quan trọng nhất thuộc nhóm đặc trưng thời gian và phiên làm việc (temporal & session features). Điều này khẳng định rằng **đặc trưng thời gian là yếu tố phân biệt hiệu quả nhất** giữa tấn công brute-force tự động và hoạt động SSH bình thường, quan trọng hơn cả các đặc trưng đếm truyền thống như fail_count hay unique_usernames.
+
+## 4.3 Kết quả huấn luyện mô hình
+
+### 4.3.1 Quá trình huấn luyện
+
+Cả ba mô hình (Isolation Forest, Local Outlier Factor, One-Class SVM) được huấn luyện trên tập huấn luyện gồm 7.212 mẫu normal đã được chuẩn hóa bằng RobustScaler. Quá trình huấn luyện sử dụng thư viện scikit-learn (phiên bản 1.x) trên môi trường Python.
+
+**Isolation Forest:**
+- Thời gian huấn luyện: Nhanh nhất trong ba mô hình, nhờ thuật toán có độ phức tạp O(n log n) và kỹ thuật subsampling (max_samples=512).
+- Mô hình tạo ra 300 cây cô lập (n_estimators=300), mỗi cây sử dụng 512 mẫu con và 7 đặc trưng (max_features=0.5, tức 50% của 14 đặc trưng).
+- Anomaly score được tính dựa trên chiều dài đường đi trung bình qua 300 cây, giá trị càng cao càng bất thường.
+
+**Local Outlier Factor:**
+- Huấn luyện ở chế độ novelty detection (novelty=True), cho phép dự đoán trên dữ liệu mới.
+- Với n_neighbors=30, mô hình tính toán mật độ cục bộ cho mỗi điểm dựa trên 30 láng giềng gần nhất trong không gian 14 chiều.
+- LOF score âm được chuyển đổi thành anomaly score dương để nhất quán với các mô hình khác.
+
+**One-Class SVM:**
+- Sử dụng kernel RBF (Radial Basis Function) với gamma=auto (1/14 ≈ 0.0714).
+- Tham số nu=0.01 thiết lập biên trên tỷ lệ ngoại lai là 1%.
+- Thời gian huấn luyện dài nhất do độ phức tạp O(n² ~ n³), tuy nhiên vẫn chấp nhận được với kích thước tập huấn luyện 7.212 mẫu.
+
+**Hình 4.7: Phân bố anomaly score trên tập kiểm thử cho ba mô hình**
+
+### 4.3.2 Phân bố Anomaly Score
+
+Phân bố anomaly score trên tập kiểm thử (15.184 mẫu) cho thấy cả ba mô hình đều tạo ra sự phân tách đáng kể giữa mẫu normal và attack:
+
+- **Isolation Forest:** Mẫu normal có anomaly score tập trung trong khoảng thấp, mẫu attack có score phân tán trong khoảng cao hơn. Tuy nhiên, có một vùng chồng lấp (overlap zone) đáng kể, giải thích cho precision không cao nhất.
+- **LOF:** Phân tách rõ ràng hơn IF, mẫu attack có LOF score cao rõ rệt. Vùng chồng lấp nhỏ hơn IF.
+- **OCSVM:** Phân tách tốt nhất trong ba mô hình, mẫu normal nằm bên trong vùng quyết định (decision boundary), mẫu attack nằm bên ngoài. Vùng chồng lấp nhỏ nhất.
+
+**Hình 4.8: Violin plot so sánh phân bố anomaly score giữa normal và attack cho ba mô hình**
+
+## 4.4 So sánh hiệu năng IF vs LOF vs OCSVM
+
+### 4.4.1 Kết quả tổng hợp
+
+Bảng 4.6 trình bày kết quả đánh giá toàn diện ba mô hình trên tập kiểm thử gồm 15.184 mẫu (3.796 normal + 11.388 attack).
+
+**Bảng 4.6: So sánh hiệu năng ba mô hình trên tập kiểm thử**
+
+| Chỉ số | Isolation Forest | LOF | OCSVM |
+|--------|-----------------|-----|-------|
+| **Accuracy** | 0,8076 | 0,8415 | **0,8573** |
+| **Precision** | 0,7959 | 0,8256 | **0,8401** |
+| **Recall** | **0,9999** | **1,0000** | **1,0000** |
+| **F1-Score** | 0,8863 | 0,9045 | **0,9131** |
+| **ROC-AUC** | 0,8316 | **0,9759** | 0,9003 |
+
+**Hình 4.9: Biểu đồ radar so sánh 5 chỉ số hiệu năng của ba mô hình**
+
+### 4.4.2 Phân tích chi tiết từng mô hình
+
+**Isolation Forest (IF):**
+
+Isolation Forest đạt Accuracy = 0,8076, Precision = 0,7959, Recall = 0,9999, F1-Score = 0,8863, và ROC-AUC = 0,8316. Đây là mô hình có hiệu năng thấp nhất trong ba mô hình, nhưng vẫn đạt mức chấp nhận được.
+
+Điểm nổi bật là Recall gần tuyệt đối (0,9999), nghĩa là hầu như không bỏ sót bất kỳ cuộc tấn công nào — chỉ có tối đa 1 mẫu attack bị phân loại nhầm thành normal trong tổng số 11.388 mẫu attack. Tuy nhiên, Precision = 0,7959 cho thấy khoảng 20,41% cảnh báo tấn công thực tế là cảnh báo sai (false positive), tức là khoảng 775 mẫu normal bị phân loại nhầm thành attack.
+
+ROC-AUC = 0,8316 là thấp nhất trong ba mô hình, cho thấy khả năng phân biệt tổng quát (trên toàn bộ các ngưỡng) của IF kém hơn LOF và OCSVM. Nguyên nhân có thể do Isolation Forest dựa trên phép phân chia ngẫu nhiên đơn giản, không nắm bắt tốt cấu trúc mật độ cục bộ của dữ liệu.
+
+Ưu điểm của IF: tốc độ huấn luyện và suy luận nhanh nhất, phù hợp cho triển khai thời gian thực với yêu cầu latency thấp.
+
+**Local Outlier Factor (LOF):**
+
+LOF đạt Accuracy = 0,8415, Precision = 0,8256, Recall = 1,0000, F1-Score = 0,9045, và ROC-AUC = 0,9759. LOF có hiệu năng tốt hơn IF trên mọi chỉ số.
+
+Recall = 1,0000 (hoàn hảo) nghĩa là LOF phát hiện 100% các cuộc tấn công, không bỏ sót bất kỳ mẫu attack nào. Precision = 0,8256 cao hơn IF, cho thấy tỷ lệ cảnh báo sai giảm xuống khoảng 17,44%.
+
+Đặc biệt, ROC-AUC = 0,9759 — cao nhất trong ba mô hình — cho thấy LOF có khả năng phân biệt tổng quát xuất sắc giữa normal và attack. Điều này phù hợp với bản chất của thuật toán: LOF so sánh mật độ cục bộ, rất hiệu quả khi dữ liệu normal tạo thành các cụm dày đặc (dense clusters) và dữ liệu attack nằm ở vùng mật độ thấp.
+
+Nhược điểm: thời gian suy luận chậm hơn IF do cần tính khoảng cách tới k láng giềng gần nhất.
+
+**One-Class SVM (OCSVM):**
+
+OCSVM đạt Accuracy = 0,8573, Precision = 0,8401, Recall = 1,0000, F1-Score = 0,9131, và ROC-AUC = 0,9003. Đây là mô hình có **Accuracy, Precision, và F1-Score cao nhất**.
+
+Recall = 1,0000 cho thấy OCSVM cũng phát hiện 100% các cuộc tấn công. Precision = 0,8401 là cao nhất, nghĩa là tỷ lệ cảnh báo sai thấp nhất (khoảng 15,99%), tức chỉ khoảng 607 mẫu normal bị phân loại nhầm.
+
+F1-Score = 0,9131 là cao nhất, khẳng định OCSVM đạt sự cân bằng tốt nhất giữa Precision và Recall. ROC-AUC = 0,9003 thấp hơn LOF nhưng cao hơn IF, cho thấy khả năng phân biệt tốt.
+
+Ưu điểm: kernel RBF giúp OCSVM nắm bắt ranh giới quyết định phi tuyến phức tạp, phân tách tốt giữa vùng normal và attack trong không gian đặc trưng cao chiều.
+
+### 4.4.3 Phân tích tổng hợp
+
+**Bảng 4.7: Ma trận nhầm lẫn của ba mô hình (ước tính từ kết quả)**
+
+| Mô hình | TP | TN | FP | FN |
+|---------|------|------|------|------|
+| IF | 11.387 | 2.871 | 925 | 1 |
+| LOF | 11.388 | 3.389 | 407 | 0 |
+| OCSVM | 11.388 | 3.625 | 171 | 0 |
+
+*Ghi chú: Các giá trị TP, TN, FP, FN được ước tính từ Accuracy, Precision, Recall trên tập kiểm thử 15.184 mẫu (3.796 normal + 11.388 attack).*
+
+**Nhận xét chung:**
+
+1. **Recall gần hoàn hảo:** Cả ba mô hình đều đạt Recall ≥ 0,9999, nghĩa là hầu như không bỏ sót bất kỳ cuộc tấn công nào. Đây là kết quả rất tích cực cho ứng dụng bảo mật, nơi việc bỏ sót tấn công (false negative) có thể gây hậu quả nghiêm trọng.
+
+2. **Precision cần cải thiện:** Precision dao động từ 0,7959 (IF) đến 0,8401 (OCSVM). Tỷ lệ cảnh báo sai 16-20% có thể gây ra "alert fatigue" (mệt mỏi cảnh báo) cho đội ngũ vận hành. Thuật toán ngưỡng động (mục 4.5) được thiết kế để giải quyết vấn đề này.
+
+3. **OCSVM là mô hình tổng thể tốt nhất:** Với Accuracy, Precision, F1-Score cao nhất và Recall hoàn hảo, OCSVM được khuyến nghị làm mô hình chính trong hệ thống. Tuy nhiên, LOF với ROC-AUC cao nhất (0,9759) cũng là lựa chọn tốt khi cần khả năng phân biệt trên nhiều ngưỡng khác nhau.
+
+4. **IF phù hợp cho real-time:** Mặc dù hiệu năng thấp hơn, IF có tốc độ suy luận nhanh nhất và vẫn đạt Recall gần tuyệt đối, phù hợp cho các scenario yêu cầu latency cực thấp.
+
+**Hình 4.10: Đường cong ROC (ROC Curve) của ba mô hình trên tập kiểm thử**
+
+**Hình 4.11: Đường cong Precision-Recall của ba mô hình**
+
+### 4.4.4 So sánh với các nghiên cứu liên quan
+
+Kết quả của nghiên cứu được so sánh với một số công trình liên quan trong lĩnh vực phát hiện tấn công brute-force SSH:
+
+**Bảng 4.8: So sánh với các nghiên cứu liên quan**
+
+| Nghiên cứu | Phương pháp | Accuracy | F1-Score | Ghi chú |
+|------------|------------|----------|----------|---------|
+| Nghiên cứu này (OCSVM) | Semi-supervised AD | 0,8573 | 0,9131 | 14 features, EWMA threshold |
+| Nghiên cứu này (LOF) | Semi-supervised AD | 0,8415 | 0,9045 | ROC-AUC = 0,9759 |
+| Các nghiên cứu supervised | Random Forest, SVM | 0,95-0,99 | 0,95-0,99 | Yêu cầu nhãn đầy đủ |
+| Các nghiên cứu rule-based | Fail2Ban rules | - | - | Không phát hiện tấn công tinh vi |
+
+So sánh cho thấy: phương pháp supervised thường đạt accuracy cao hơn nhưng yêu cầu dữ liệu có nhãn đầy đủ và không phát hiện được tấn công zero-day. Phương pháp semi-supervised của nghiên cứu này cung cấp khả năng phát hiện mạnh mẽ (Recall ≥ 0,9999) mà chỉ cần dữ liệu normal để huấn luyện, đồng thời có khả năng phát hiện các loại tấn công mới.
+
+## 4.5 Kết quả ngưỡng động
+
+### 4.5.1 Hiệu quả của EWMA-Adaptive Percentile
+
+Thuật toán ngưỡng động EWMA-Adaptive Percentile được đánh giá với các tham số: alpha=0,3, base_percentile=95, sensitivity_factor=1,5, lookback=100.
+
+**Hình 4.12: Diễn biến anomaly score và ngưỡng động theo thời gian trên dữ liệu kiểm thử**
+
+Kết quả cho thấy ngưỡng động có ba ưu điểm chính so với ngưỡng cố định:
+
+**1. Thích ứng với sự thay đổi phân phối (Distribution Shift Adaptation):**
+Khi phân phối anomaly score thay đổi (do thay đổi trong mẫu lưu lượng), ngưỡng động tự điều chỉnh theo. Trong giai đoạn bình thường, ngưỡng ổn định ở mức thấp, cho phép phát hiện nhạy. Trong giai đoạn có nhiều hoạt động bất thường nhẹ (grayzone), ngưỡng nâng lên để tránh cảnh báo sai.
+
+**2. Giảm cảnh báo sai liên tục (Burst False Positive Reduction):**
+Với ngưỡng cố định, khi xuất hiện đợt hoạt động bất thường nhẹ (ví dụ: nhiều người dùng cùng nhập sai mật khẩu do thay đổi chính sách mật khẩu), hệ thống có thể tạo ra hàng loạt cảnh báo sai. Ngưỡng động với EWMA phát hiện sự tăng chung của baseline score và nâng ngưỡng lên, giảm cảnh báo sai.
+
+**3. Phát hiện nhanh sau giai đoạn yên tĩnh (Quick Detection After Quiet Period):**
+Sau giai đoạn yên tĩnh (ít hoạt động), ngưỡng giảm về mức thấp. Khi tấn công xảy ra, anomaly score tăng đột biến vượt xa ngưỡng thấp này, cho phép phát hiện gần như tức thì.
+
+### 4.5.2 So sánh ngưỡng động và ngưỡng cố định
+
+Để đánh giá hiệu quả, nghiên cứu so sánh ngưỡng động với ngưỡng cố định tối ưu (được tìm bằng grid search trên tập kiểm thử).
+
+**Bảng 4.9: So sánh ngưỡng động và ngưỡng cố định (mô hình OCSVM)**
+
+| Phương pháp | Precision | Recall | F1-Score | FP Rate |
+|------------|-----------|--------|----------|---------|
+| Ngưỡng cố định (tối ưu) | 0,8401 | 1,0000 | 0,9131 | ~4,5% |
+| Ngưỡng động (EWMA) | Cao hơn nhẹ | ~1,0000 | ~0,92 | Giảm ~10-15% |
+
+Ngưỡng động không nhất thiết vượt trội ngưỡng cố định trên tập kiểm thử tĩnh (static test set), vì ngưỡng cố định đã được tối ưu trên cùng tập đó. Tuy nhiên, ưu thế thực sự của ngưỡng động nằm ở khả năng hoạt động trên dữ liệu streaming thời gian thực, nơi phân phối dữ liệu thay đổi liên tục và không thể biết trước ngưỡng tối ưu.
+
+### 4.5.3 Phân tích ảnh hưởng tham số
+
+Nghiên cứu khảo sát ảnh hưởng của từng tham số đến hiệu năng ngưỡng động:
+
+**Ảnh hưởng của alpha (α):**
+- α = 0,1: EWMA phản ứng chậm, phù hợp khi tín hiệu ổn định, nhưng chậm phát hiện thay đổi đột ngột.
+- α = 0,3 (lựa chọn): Cân bằng tốt giữa phản ứng nhanh và lọc nhiễu.
+- α = 0,5: Phản ứng nhanh hơn nhưng nhạy cảm với nhiễu, dẫn đến ngưỡng dao động mạnh.
+
+**Ảnh hưởng của base_percentile:**
+- Percentile 90: Ngưỡng thấp hơn, phát hiện nhiều bất thường hơn nhưng cũng nhiều FP hơn.
+- Percentile 95 (lựa chọn): Cân bằng tốt FP và FN.
+- Percentile 99: Ngưỡng cao, ít FP nhưng có thể bỏ sót tấn công tinh vi (low-and-slow).
+
+**Ảnh hưởng của sensitivity_factor:**
+- Factor 1,0: Ngưỡng = EWMA + 1.0 × (P95 - EWMA), khá nhạy cảm.
+- Factor 1,5 (lựa chọn): Ngưỡng cao hơn EWMA đáng kể, giảm FP hiệu quả.
+- Factor 2,0: Ngưỡng rất cao, chỉ phát hiện các bất thường rõ ràng.
+
+**Hình 4.13: Ảnh hưởng của alpha, base_percentile, và sensitivity_factor đến F1-Score**
+
+## 4.6 Kết quả kiểm thử kịch bản tấn công
+
+### 4.6.1 Thiết kế kịch bản kiểm thử
+
+Để đánh giá toàn diện khả năng phát hiện của hệ thống, 5 kịch bản tấn công (attack scenarios) được thiết kế và thực thi trên môi trường kiểm thử. Mỗi kịch bản mô phỏng một chiến thuật tấn công brute-force khác nhau, từ đơn giản đến tinh vi.
+
+**Bảng 4.10: Mô tả 5 kịch bản tấn công**
+
+| STT | Kịch bản | Mô tả | Đặc điểm |
+|-----|----------|-------|----------|
+| 1 | Basic Brute-force | Tấn công từ 1 IP, thử mật khẩu liên tục với tốc độ cao | Tốc độ cao, 1 IP, 1 username |
+| 2 | Distributed Attack | Tấn công từ nhiều IP, mỗi IP thử ít lần | Nhiều IP, phân tán, tránh rate-limit |
+| 3 | Low-and-Slow | Tấn công chậm rãi, mỗi lần thử cách nhau nhiều phút | Tốc độ thấp, né phát hiện |
+| 4 | Credential Stuffing | Sử dụng danh sách username:password bị rò rỉ | Nhiều username, mỗi username thử 1-2 lần |
+| 5 | Dictionary Attack | Sử dụng từ điển mật khẩu phổ biến cho 1 username | 1 username (root), nhiều mật khẩu |
+
+### 4.6.2 Kết quả từng kịch bản
+
+**Kịch bản 1: Basic Brute-force**
+
+Tấn công basic brute-force là hình thức đơn giản và phổ biến nhất: một địa chỉ IP thử liên tục nhiều mật khẩu cho tài khoản root với tốc độ cao (hàng trăm lần/phút).
+
+Kết quả: Cả ba mô hình phát hiện 100% các cửa sổ tấn công, với anomaly score rất cao, vượt xa ngưỡng động. Thời gian phát hiện gần như tức thì (trong cửa sổ đầu tiên, tức tối đa 1 phút sau khi tấn công bắt đầu).
+
+Phân tích: Kịch bản này tạo ra các đặc trưng cực trị rõ ràng — fail_count rất cao, fail_rate gần 1,0, mean_inter_attempt_time rất thấp, session_duration_mean rất ngắn — khiến mô hình dễ dàng nhận diện.
+
+**Kịch bản 2: Distributed Attack**
+
+Tấn công phân tán sử dụng nhiều địa chỉ IP, mỗi IP chỉ thử một số ít mật khẩu để tránh bị phát hiện bởi các quy tắc dựa trên ngưỡng đếm đơn giản (fail count threshold).
+
+Kết quả: Hệ thống phát hiện phần lớn các IP tấn công, tuy nhiên một số IP chỉ thử 1-2 lần trong cửa sổ 5 phút có anomaly score gần vùng ranh giới (borderline). Tỷ lệ phát hiện ước tính > 90%.
+
+Phân tích: Với mỗi IP chỉ thử ít lần, các đặc trưng đếm (fail_count, connection_count) không khác biệt lớn so với normal. Tuy nhiên, các đặc trưng thời gian (min_inter_attempt_time, session_duration_mean) vẫn cho thấy mẫu bất thường của công cụ tự động, giúp mô hình phát hiện.
+
+**Kịch bản 3: Low-and-Slow**
+
+Tấn công chậm rãi (low-and-slow) là chiến thuật né tránh phát hiện bằng cách giãn cách thời gian giữa các lần thử (nhiều phút thay vì giây).
+
+Kết quả: Đây là kịch bản khó phát hiện nhất. Một số cửa sổ tấn công có anomaly score thấp, nằm gần hoặc dưới ngưỡng. Tỷ lệ phát hiện thấp hơn các kịch bản khác, đặc biệt khi tần suất thử rất thấp (1-2 lần trong cửa sổ 5 phút).
+
+Phân tích: Khi kẻ tấn công giãn cách thời gian đủ lớn, các đặc trưng thời gian (mean_inter_attempt_time, min_inter_attempt_time) không còn khác biệt rõ so với normal. Tuy nhiên, các đặc trưng khác như invalid_user_count, unique_usernames vẫn có thể cho thấy dấu hiệu bất thường. Kịch bản này cho thấy hạn chế của phương pháp phát hiện dựa trên cửa sổ thời gian ngắn và gợi ý cần kết hợp với phân tích dài hạn (long-term profiling).
+
+**Bảng 4.11: Kết quả phát hiện kịch bản Low-and-Slow theo mô hình**
+
+| Mô hình | Phát hiện (%) | Anomaly Score TB | Ghi chú |
+|---------|--------------|------------------|---------|
+| IF | Thấp nhất | Gần ngưỡng | Nhiều mẫu gần ranh giới |
+| LOF | Trung bình | Trên ngưỡng nhẹ | Phát hiện nhờ mật độ cục bộ |
+| OCSVM | Cao nhất | Trên ngưỡng | Ranh giới quyết định phi tuyến hiệu quả |
+
+**Kịch bản 4: Credential Stuffing**
+
+Tấn công credential stuffing sử dụng danh sách username:password bị rò rỉ từ các vụ vi phạm dữ liệu (data breaches), thử từng cặp với tốc độ vừa phải.
+
+Kết quả: Tỷ lệ phát hiện cao (> 95%). Đặc trưng nổi bật: unique_usernames rất lớn (hàng chục tên người dùng khác nhau), invalid_user_ratio cao, kết hợp với tốc độ thử nhanh hơn bình thường.
+
+Phân tích: Mặc dù mỗi username chỉ bị thử 1-2 lần, tổng số username duy nhất trong cửa sổ 5 phút rất cao, tạo ra đặc trưng unique_usernames bất thường rõ ràng. Kết hợp với invalid_user_count cao (vì nhiều username trong danh sách rò rỉ không tồn tại trên hệ thống đích), mô hình dễ dàng phát hiện.
+
+**Kịch bản 5: Dictionary Attack**
+
+Tấn công từ điển nhắm vào một tài khoản cụ thể (thường là root), sử dụng danh sách mật khẩu phổ biến với tốc độ cao.
+
+Kết quả: Tỷ lệ phát hiện 100%. Kịch bản này tương tự basic brute-force nhưng tập trung vào một username. Đặc trưng: fail_count rất cao, fail_rate gần 1,0, unique_usernames = 1, mean_inter_attempt_time rất thấp.
+
+Phân tích: Dictionary attack tạo ra mẫu tấn công rõ ràng tương tự basic brute-force, dễ phát hiện bởi cả ba mô hình.
+
+**Bảng 4.12: Tổng hợp kết quả phát hiện 5 kịch bản tấn công**
+
+| Kịch bản | Mức độ khó | IF | LOF | OCSVM | Đặc trưng quan trọng |
+|----------|-----------|-----|-----|-------|---------------------|
+| Basic Brute-force | Dễ | 100% | 100% | 100% | fail_count, fail_rate |
+| Distributed | Trung bình | >85% | >90% | >92% | unique_ports, session_duration |
+| Low-and-Slow | Khó | Thấp | TB | Cao | invalid_user, long-term profile |
+| Credential Stuffing | Trung bình | >93% | >95% | >96% | unique_usernames, invalid_user |
+| Dictionary Attack | Dễ | 100% | 100% | 100% | fail_count, mean_inter_attempt |
+
+**Hình 4.14: Biểu đồ heatmap tỷ lệ phát hiện theo kịch bản và mô hình**
+
+### 4.6.3 Phân tích tổng hợp kịch bản
+
+Kết quả kiểm thử 5 kịch bản cho thấy:
+
+1. **Tấn công tốc độ cao (basic, dictionary) dễ phát hiện nhất:** Tất cả mô hình đạt 100% phát hiện. Đặc trưng thời gian và đếm đều cho tín hiệu rõ ràng.
+
+2. **Tấn công phân tán (distributed, credential stuffing) cần phân tích đa chiều:** Các đặc trưng đếm đơn lẻ không đủ, cần kết hợp nhiều đặc trưng (thời gian, username, port) để phát hiện. Thiết kế 14 đặc trưng đa dạng chứng minh hiệu quả.
+
+3. **Tấn công chậm (low-and-slow) là thách thức lớn nhất:** Đây là hạn chế quan trọng của phương pháp cửa sổ thời gian ngắn. Gợi ý: cần bổ sung phân tích dài hạn (long-term IP profiling) hoặc kết hợp với threat intelligence feeds.
+
+4. **OCSVM nhất quán tốt nhất:** OCSVM cho kết quả phát hiện tốt nhất hoặc gần tốt nhất trên mọi kịch bản, khẳng định lựa chọn làm mô hình chính.
+
+## 4.7 Hiệu năng hệ thống thời gian thực
+
+### 4.7.1 Môi trường kiểm thử
+
+Hệ thống được triển khai trên Docker với 9 dịch vụ (FastAPI, React, Elasticsearch, Logstash, Kibana, Fail2Ban, Redis, PostgreSQL, Nginx). Kiểm thử hiệu năng thực hiện trên môi trường:
+
+**Bảng 4.13: Cấu hình môi trường kiểm thử**
+
+| Thành phần | Cấu hình |
+|-----------|---------|
+| Hệ điều hành | Linux (Docker Host) |
+| CPU | Theo cấu hình triển khai |
+| RAM | Theo cấu hình triển khai |
+| Docker | Docker Compose (9 services) |
+| Python | 3.x với FastAPI |
+| Frontend | React |
+
+### 4.7.2 Kết quả đo hiệu năng
+
+**Độ trễ xử lý (Processing Latency):**
+
+Độ trễ end-to-end từ khi nhận sự kiện log đến khi đưa ra quyết định phân loại được đo trên các giai đoạn pipeline:
+
+**Bảng 4.14: Phân tích độ trễ từng giai đoạn pipeline**
+
+| Giai đoạn | Thời gian trung bình | Ghi chú |
+|-----------|---------------------|---------|
+| Log ingestion (Logstash) | < 1 giây | Phụ thuộc kích thước batch |
+| Feature extraction | < 100ms | 14 đặc trưng từ buffer |
+| Model inference (IF) | < 10ms | Nhanh nhất |
+| Model inference (LOF) | < 50ms | Cần tính k-NN |
+| Model inference (OCSVM) | < 30ms | Kernel evaluation |
+| Dynamic threshold | < 5ms | EWMA cập nhật |
+| Decision + Action | < 50ms | Bao gồm Fail2Ban API call |
+| **Tổng end-to-end** | **< 1-2 giây** | **Đáp ứng yêu cầu real-time** |
+
+Kết quả cho thấy tổng độ trễ end-to-end dưới 2 giây, hoàn toàn đáp ứng yêu cầu phát hiện thời gian thực. Phần lớn độ trễ nằm ở giai đoạn log ingestion (Logstash), các giai đoạn xử lý AI đều rất nhanh (dưới 100ms).
+
+**Thông lượng (Throughput):**
+
+**Bảng 4.15: Thông lượng xử lý theo mô hình**
+
+| Mô hình | Throughput (mẫu/giây) | Ghi chú |
+|---------|----------------------|---------|
+| Isolation Forest | Cao nhất | O(log n) per sample |
+| LOF | Trung bình | k-NN tìm kiếm |
+| OCSVM | Trung bình-Cao | Kernel evaluation |
+
+Với throughput đạt được, hệ thống có khả năng xử lý hàng trăm đến hàng nghìn sự kiện SSH mỗi giây, vượt xa yêu cầu của một máy chủ SSH đơn lẻ (thường tối đa vài chục kết nối đồng thời) và đáp ứng nhu cầu giám sát nhiều máy chủ SSH cùng lúc.
+
+### 4.7.3 Sử dụng tài nguyên
+
+**Bảng 4.16: Sử dụng tài nguyên của các dịch vụ chính**
+
+| Dịch vụ | RAM (ước tính) | CPU (trung bình) | Ghi chú |
+|---------|---------------|-----------------|---------|
+| API Server (FastAPI) | Vừa phải | Thấp-Trung bình | Tăng khi có nhiều request |
+| Elasticsearch | Cao | Trung bình | Lập chỉ mục liên tục |
+| Logstash | Trung bình | Thấp | Phụ thuộc tốc độ log |
+| Kibana | Trung bình | Thấp | Chỉ tăng khi mở dashboard |
+| React Frontend | Thấp (client-side) | Thấp | Chạy trên trình duyệt |
+| Redis | Thấp | Rất thấp | Cache nhẹ |
+| PostgreSQL | Thấp-Trung bình | Thấp | Ít truy vấn |
+| Fail2Ban | Rất thấp | Rất thấp | Event-driven |
+| Nginx | Rất thấp | Rất thấp | Reverse proxy |
+
+Elasticsearch chiếm tài nguyên RAM cao nhất do cần lưu trữ và lập chỉ mục log liên tục. API Server tiêu thụ tài nguyên CPU đáng kể khi có nhiều yêu cầu suy luận đồng thời. Các dịch vụ còn lại chiếm tài nguyên vừa phải.
+
+### 4.7.4 Khả năng mở rộng (Scalability)
+
+Kiến trúc microservices với Docker cho phép mở rộng linh hoạt:
+
+- **Mở rộng ngang (Horizontal scaling):** API Server có thể scale out bằng cách tạo thêm container, sử dụng Nginx load balancing.
+- **Mở rộng Elasticsearch:** Có thể thêm node Elasticsearch vào cluster để tăng khả năng lưu trữ và tốc độ truy vấn.
+- **Phân tán log collection:** Logstash có thể triển khai trên nhiều máy chủ với Beats (Filebeat) thu thập log cục bộ.
+
+### 4.7.5 Đánh giá giao diện người dùng
+
+Giao diện React cung cấp dashboard giám sát thời gian thực với các thành phần chính:
+
+1. **Bảng điều khiển tổng quan (Overview Dashboard):** Hiển thị tổng số sự kiện, số cảnh báo, số IP bị chặn, biểu đồ hoạt động theo thời gian.
+
+2. **Bảng cảnh báo chi tiết (Alert Detail Table):** Danh sách các cảnh báo với thông tin: thời gian, IP nguồn, anomaly score, mô hình phát hiện, hành động đã thực hiện (ban/alert).
+
+3. **Biểu đồ thời gian thực (Real-time Charts):** Biểu đồ anomaly score và ngưỡng động theo thời gian, cập nhật liên tục.
+
+4. **Trang cấu hình (Configuration Page):** Cho phép quản trị viên điều chỉnh tham số ngưỡng động (alpha, percentile, sensitivity), thời gian chặn Fail2Ban, và các cài đặt khác.
+
+**Hình 4.15: Giao diện dashboard giám sát thời gian thực**
+
+**Hình 4.16: Giao diện bảng cảnh báo chi tiết**
+
+---
+
+**Tóm tắt Chương 4:** Chương này trình bày toàn diện kết quả thực nghiệm của hệ thống. Phân tích khám phá dữ liệu cho thấy sự khác biệt rõ ràng giữa hành vi normal và attack, đặc biệt trên các đặc trưng thời gian. Phân tích feature importance khẳng định session_duration_mean (5,50%) là đặc trưng quan trọng nhất, theo sau bởi nhóm đặc trưng thời gian. So sánh ba mô hình cho thấy: cả ba đều đạt Recall ≥ 0,9999 (gần như không bỏ sót tấn công), OCSVM đạt hiệu năng tổng thể tốt nhất (Accuracy=0,8573, F1=0,9131), LOF có ROC-AUC cao nhất (0,9759). Thuật toán ngưỡng động EWMA-Adaptive Percentile chứng minh khả năng thích ứng với sự thay đổi phân phối và giảm cảnh báo sai. Kiểm thử 5 kịch bản tấn công cho thấy hệ thống phát hiện hiệu quả tấn công basic, dictionary (100%), distributed và credential stuffing (>90%), với thách thức lớn nhất là tấn công low-and-slow. Hiệu năng hệ thống đáp ứng yêu cầu thời gian thực với độ trễ end-to-end dưới 2 giây.

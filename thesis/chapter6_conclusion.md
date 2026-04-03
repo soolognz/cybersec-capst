@@ -1,0 +1,75 @@
+# CHƯƠNG 6: KẾT LUẬN VÀ HƯỚNG PHÁT TRIỂN (Conclusion and Future Work)
+
+## 6.1 Kết luận
+
+Nghiên cứu này đã trình bày việc thiết kế, triển khai và đánh giá một hệ thống phát hiện và phòng chống tấn công brute-force trên hệ thống SSH sử dụng trí tuệ nhân tạo, với khả năng dự đoán sớm thông qua thuật toán ngưỡng động. Các kết quả chính của nghiên cứu bao gồm:
+
+### Đóng góp 1: Hệ thống phát hiện bất thường dựa trên Isolation Forest
+
+Hệ thống sử dụng mô hình Isolation Forest được huấn luyện theo phương pháp bán giám sát (semi-supervised) trên dữ liệu hành vi SSH bình thường, đạt F1-Score 93.74% và Recall 96.75% sau khi tối ưu hóa. Mô hình phát hiện hiệu quả các cuộc tấn công brute-force SSH bao gồm: tấn công cơ bản (basic), phân tán (distributed), từ điển (dictionary), credential stuffing, và đặc biệt là tấn công low-and-slow - loại tấn công mà các công cụ truyền thống như Fail2Ban không phát hiện được.
+
+### Đóng góp 2: Thuật toán ngưỡng động EWMA-Adaptive Percentile
+
+Nghiên cứu đề xuất và triển khai thuật toán ngưỡng động kết hợp EWMA (Exponentially Weighted Moving Average) với percentile thích ứng, cho phép:
+- **Dự đoán sớm**: Phát hiện xu hướng tấn công trước khi tấn công đạt cường độ cao nhất, thông qua cơ chế hai mức cảnh báo (EARLY_WARNING và ALERT).
+- **Tự thích ứng**: Ngưỡng phát hiện tự điều chỉnh dựa trên phân phối anomaly scores gần đây.
+- **Tự hiệu chỉnh**: Cơ chế self-calibration điều chỉnh base percentile dựa trên tỷ lệ false positive quan sát được.
+
+Đây là đóng góp mới so với các nghiên cứu hiện có, vốn chủ yếu sử dụng ngưỡng tĩnh hoặc phát hiện hậu sự kiện (post-event detection).
+
+### Đóng góp 3: So sánh mô hình toàn diện
+
+Nghiên cứu thực hiện so sánh chi tiết ba mô hình phát hiện bất thường (Isolation Forest, LOF, One-Class SVM) trên cùng tập dữ liệu SSH thực tế, cung cấp cơ sở khoa học cho việc lựa chọn Isolation Forest làm mô hình chính dựa trên: (1) khả năng tạo anomaly score phù hợp cho ngưỡng động, (2) hiệu quả tính toán O(n log n), và (3) không yêu cầu giả định về phân phối dữ liệu.
+
+### Đóng góp 4: Hệ thống triển khai hoàn chỉnh
+
+Hệ thống được triển khai end-to-end với kiến trúc microservices containerize bằng Docker (9 services), bao gồm: pipeline phát hiện real-time (asyncio), cảnh báo qua email và WebSocket, trực quan hóa qua ELK Stack và React dashboard, và tự động chặn IP qua Fail2Ban. Hệ thống có thể triển khai trực tiếp trong môi trường production.
+
+### Đóng góp 5: Kỹ thuật trích xuất đặc trưng 14 chiều
+
+Nghiên cứu thiết kế bộ 14 đặc trưng (mở rộng lên 23 sau tối ưu) dựa trên phân tích cửa sổ trượt theo IP (5 phút/cửa sổ), bao gồm nhóm đặc trưng đếm, thời gian, kết nối, và phiên. Phân tích tầm quan trọng cho thấy các đặc trưng thời gian (session_duration_mean, min_inter_attempt_time) là quan trọng nhất, phù hợp với đặc tính tự động hóa của tấn công brute-force.
+
+## 6.2 Trả lời câu hỏi nghiên cứu
+
+**RQ1**: *Liệu mô hình Isolation Forest có thể phát hiện hiệu quả tấn công brute-force SSH từ dữ liệu log?*
+→ Có. IF đạt F1=93.74% và Recall=96.75% trên dữ liệu SSH log thực tế, với khả năng phát hiện đa dạng các kiểu tấn công brute-force.
+
+**RQ2**: *Thuật toán ngưỡng động có thể dự đoán sớm tấn công trước khi nó đạt cường độ tối đa?*
+→ Có. Thuật toán EWMA-Adaptive Percentile phát hiện tấn công low-and-slow sau 3-5 lần thử (~2-3 phút), trước khi tấn công escalate, vượt trội so với Fail2Ban truyền thống.
+
+**RQ3**: *IF có phù hợp hơn LOF và OCSVM cho bài toán này?*
+→ IF phù hợp nhất cho hệ thống dynamic threshold nhờ anomaly score liên tục, hiệu quả tính toán cao, và không yêu cầu distance metric assumptions. Mặc dù OCSVM đạt F1 cao hơn một chút (94.55%), IF có ưu thế trong triển khai real-time.
+
+## 6.3 Hướng phát triển tương lai
+
+### 6.3.1 Áp dụng Deep Learning
+
+Sử dụng mạng LSTM (Long Short-Term Memory) hoặc Transformer để mô hình hóa chuỗi thời gian SSH log, có thể cải thiện khả năng phát hiện pattern tấn công phức tạp hơn. Autoencoder cũng là hướng tiềm năng cho anomaly detection với khả năng học biểu diễn phi tuyến.
+
+### 6.3.2 Online Learning
+
+Triển khai incremental learning để mô hình tự cập nhật liên tục mà không cần re-train từ đầu, giải quyết vấn đề concept drift khi pattern tấn công thay đổi theo thời gian.
+
+### 6.3.3 Hỗ trợ đa giao thức
+
+Mở rộng hệ thống để phát hiện brute-force trên các giao thức khác: FTP, RDP, SMTP, HTTP authentication. Kiến trúc hiện tại (log parser + feature extractor + model) có thể tái sử dụng với parser và features phù hợp cho từng giao thức.
+
+### 6.3.4 Federated Detection
+
+Triển khai federated learning cho phép nhiều server chia sẻ thông tin về pattern tấn công mà không cần tập trung dữ liệu log nhạy cảm, nâng cao khả năng phát hiện tấn công phân tán.
+
+### 6.3.5 Tích hợp Threat Intelligence
+
+Kết hợp với các nguồn threat intelligence (IP reputation databases, STIX/TAXII feeds) để enrich thông tin về nguồn tấn công, nâng cao độ chính xác và giảm false positives.
+
+### 6.3.6 Tích hợp SOAR
+
+Tích hợp với nền tảng Security Orchestration, Automation and Response (SOAR) để tự động hóa quy trình phản ứng sự cố, bao gồm: tự động cách ly, thu thập bằng chứng, và thông báo theo quy trình.
+
+## 6.4 Lời kết
+
+Nghiên cứu này chứng minh rằng việc kết hợp Isolation Forest với thuật toán ngưỡng động EWMA-Adaptive Percentile là một phương pháp hiệu quả và khả thi cho bài toán phát hiện và dự đoán sớm tấn công brute-force SSH. Hệ thống không chỉ vượt trội so với các công cụ truyền thống như Fail2Ban về khả năng phát hiện, mà còn cung cấp tính năng dự đoán sớm - cho phép quản trị viên phản ứng chủ động trước khi tấn công gây ra thiệt hại. Với kiến trúc containerize và tài liệu hướng dẫn đầy đủ, hệ thống sẵn sàng triển khai trong môi trường production thực tế.
+
+---
+
+*Số từ chương 5+6: ~3,500 từ (~10 trang)*

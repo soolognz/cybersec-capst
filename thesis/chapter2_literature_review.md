@@ -1,0 +1,587 @@
+# CHƯƠNG 2: TỔNG QUAN TÀI LIỆU
+
+## 2.1 Giao thức SSH và cơ chế xác thực
+
+### 2.1.1 Tổng quan về giao thức SSH
+
+Giao thức SSH (Secure Shell) là một giao thức mạng mật mã được thiết kế để cung cấp kênh liên lạc an toàn trên môi trường mạng không đáng tin cậy. SSH được phát triển lần đầu vào năm 1995 bởi Tatu Ylönen, nhà nghiên cứu tại Đại học Công nghệ Helsinki (Phần Lan), như một giải pháp thay thế an toàn cho các giao thức truy cập từ xa không được mã hóa như Telnet, rlogin và rsh [1]. Phiên bản hiện tại được sử dụng rộng rãi là SSH-2, được chuẩn hóa bởi IETF (Internet Engineering Task Force) thông qua chuỗi tài liệu RFC 4250–4256 vào năm 2006 [2].
+
+Kiến trúc SSH-2 được tổ chức thành ba lớp giao thức phân tầng:
+
+**Lớp giao thức vận chuyển (Transport Layer Protocol — RFC 4253):** Lớp này cung cấp khả năng xác thực máy chủ (server authentication), bảo mật dữ liệu (confidentiality) và toàn vẹn dữ liệu (integrity). Quá trình bắt tay (handshake) bao gồm trao đổi phiên bản giao thức, thương lượng thuật toán mật mã, trao đổi khóa Diffie-Hellman, và xác thực máy chủ bằng khóa công khai. Sau khi hoàn tất, một kênh liên lạc được mã hóa được thiết lập giữa client và server [3].
+
+**Lớp giao thức xác thực người dùng (User Authentication Protocol — RFC 4252):** Lớp này xử lý việc xác thực danh tính người dùng. SSH-2 hỗ trợ nhiều phương pháp xác thực bao gồm: xác thực bằng mật khẩu (password), xác thực bằng khóa công khai (publickey), xác thực dựa trên máy chủ (hostbased), và xác thực bàn phím tương tác (keyboard-interactive). Trong thực tế, hai phương pháp phổ biến nhất là xác thực mật khẩu và xác thực khóa công khai [4].
+
+**Lớp giao thức kết nối (Connection Protocol — RFC 4254):** Lớp này cho phép ghép kênh (multiplexing) nhiều kênh logic trên một kết nối SSH duy nhất, hỗ trợ các tính năng như thực thi lệnh từ xa, chuyển tiếp cổng (port forwarding), và truyền tải tệp tin qua SFTP/SCP [5].
+
+<!-- Gợi ý: Hình 2.1 - Sơ đồ kiến trúc phân tầng của giao thức SSH-2 -->
+
+### 2.1.2 Cơ chế xác thực mật khẩu và điểm yếu
+
+Cơ chế xác thực mật khẩu (password authentication) trong SSH hoạt động theo quy trình sau: (1) Client gửi yêu cầu xác thực kèm tên đăng nhập và mật khẩu qua kênh đã được mã hóa; (2) Server kiểm tra thông tin đăng nhập với cơ sở dữ liệu người dùng (thường là /etc/shadow trên Linux); (3) Server phản hồi thành công (SSH_MSG_USERAUTH_SUCCESS) hoặc thất bại (SSH_MSG_USERAUTH_FAILURE) [4].
+
+Mặc dù mật khẩu được truyền qua kênh mã hóa, cơ chế xác thực mật khẩu tồn tại nhiều điểm yếu cố hữu khiến nó trở thành mục tiêu của tấn công brute-force:
+
+- **Không giới hạn số lần thử mặc định:** Cấu hình mặc định của OpenSSH cho phép nhiều lần thử xác thực trong một phiên kết nối (thông số MaxAuthTries, mặc định là 6) và không giới hạn tổng số phiên kết nối từ một IP [6].
+- **Phụ thuộc vào độ mạnh mật khẩu:** Hiệu quả bảo mật hoàn toàn phụ thuộc vào việc người dùng chọn mật khẩu đủ mạnh, điều mà thực tế cho thấy thường không được đảm bảo [7].
+- **Không có cơ chế chống tự động:** Không giống như các ứng dụng web có thể sử dụng CAPTCHA, giao thức SSH không có cơ chế tích hợp để phân biệt giữa người dùng thực và công cụ tấn công tự động [8].
+
+### 2.1.3 Nhật ký SSH và thông tin hữu ích cho phát hiện tấn công
+
+Máy chủ SSH ghi nhận các sự kiện xác thực vào tệp nhật ký hệ thống (thường là /var/log/auth.log trên Debian/Ubuntu hoặc /var/log/secure trên CentOS/RHEL). Mỗi sự kiện chứa các thông tin quan trọng bao gồm: dấu thời gian (timestamp), địa chỉ IP nguồn, tên đăng nhập được sử dụng, kết quả xác thực (thành công/thất bại), phương pháp xác thực, và số cổng nguồn [9].
+
+Ví dụ về các mẫu nhật ký SSH:
+
+```
+Failed password for root from 192.168.1.100 port 52413 ssh2
+Failed password for invalid user admin from 10.0.0.5 port 39821 ssh2
+Accepted password for user1 from 172.16.0.10 port 48732 ssh2
+Connection closed by authenticating user root 192.168.1.100 port 52413
+```
+
+Các trường thông tin này cung cấp nền tảng dữ liệu phong phú cho việc trích xuất đặc trưng hành vi và phân tích bất thường, phục vụ mục đích phát hiện tấn công brute-force.
+
+## 2.2 Phân loại tấn công Brute-force
+
+### 2.2.1 Định nghĩa và nguyên lý
+
+Tấn công brute-force (tấn công dò mật khẩu) là hình thức tấn công trong đó kẻ tấn công thử lần lượt các tổ hợp tên đăng nhập và mật khẩu cho đến khi tìm được thông tin đăng nhập hợp lệ. Về mặt lý thuyết, brute-force luôn thành công nếu không gian tìm kiếm hữu hạn và kẻ tấn công có đủ thời gian, tuy nhiên trong thực tế, thời gian cần thiết phụ thuộc vào độ phức tạp của mật khẩu và tốc độ thử [10].
+
+Với bảng chữ cái có kích thước |A| và mật khẩu có độ dài L, không gian tìm kiếm tối đa là:
+
+$$S = |A|^L$$
+
+Ví dụ, với mật khẩu gồm chữ cái thường (26 ký tự) và chữ số (10 ký tự), có độ dài 8 ký tự, không gian tìm kiếm là 36^8 ≈ 2,82 × 10^12 tổ hợp.
+
+### 2.2.2 Các biến thể tấn công brute-force SSH
+
+Dựa trên phân tích các công trình nghiên cứu và dữ liệu thực tế, các biến thể tấn công brute-force SSH có thể được phân loại như sau:
+
+**a) Tấn công brute-force cổ điển (Classic brute-force):**
+Kẻ tấn công thử tất cả tổ hợp có thể với tốc độ cao nhất, thường nhắm vào các tài khoản phổ biến như root, admin, user. Đặc điểm nhận dạng bao gồm: tần suất đăng nhập thất bại rất cao (hàng trăm đến hàng nghìn lần/phút), khoảng cách thời gian giữa các lần thử rất ngắn và đồng đều, sử dụng nhiều tên đăng nhập khác nhau [11].
+
+**b) Tấn công từ điển (Dictionary attack):**
+Sử dụng danh sách mật khẩu phổ biến được biên soạn sẵn (wordlist), thay vì thử tất cả tổ hợp. Các danh sách phổ biến bao gồm RockYou (14 triệu mật khẩu), SecLists, và các danh sách được tùy chỉnh theo mục tiêu. Phương pháp này hiệu quả hơn brute-force cổ điển vì khai thác thói quen sử dụng mật khẩu yếu của người dùng [12].
+
+**c) Tấn công chậm (Slow brute-force / Low-and-slow attack):**
+Kẻ tấn công cố tình giảm tốc độ tấn công, thực hiện chỉ vài lần thử mỗi phút hoặc thậm chí mỗi giờ, nhằm lẩn tránh các cơ chế phát hiện dựa trên ngưỡng tần suất. Đây là hình thức tấn công khó phát hiện nhất với các phương pháp truyền thống, vì hành vi tấn công gần giống với hành vi của người dùng hợp pháp đăng nhập thất bại [13].
+
+**d) Tấn công phân tán (Distributed brute-force):**
+Sử dụng mạng botnet hoặc dịch vụ proxy để phân tán tấn công từ nhiều địa chỉ IP khác nhau. Mỗi IP chỉ thực hiện một số ít lần thử, khiến việc phát hiện dựa trên số lần thất bại từ một IP trở nên không hiệu quả. Theo Owens và Matthews [14], tấn công phân tán chiếm tỷ lệ ngày càng tăng trong các cuộc tấn công brute-force SSH được ghi nhận.
+
+**e) Tấn công credential stuffing:**
+Sử dụng các cặp tên đăng nhập-mật khẩu bị rò rỉ từ các vụ vi phạm dữ liệu của các dịch vụ khác. Kẻ tấn công khai thác thói quen sử dụng lại mật khẩu (password reuse) của người dùng. Hình thức này đặc biệt nguy hiểm vì tỷ lệ thành công cao hơn nhiều so với brute-force ngẫu nhiên [15].
+
+<!-- Gợi ý: Bảng 2.1 - So sánh đặc điểm các biến thể tấn công brute-force SSH -->
+<!-- Các cột: Loại tấn công | Tốc độ | Số IP nguồn | Khả năng lẩn tránh | Công cụ phổ biến -->
+
+### 2.2.3 Công cụ tấn công phổ biến
+
+Các công cụ thường được sử dụng trong tấn công brute-force SSH bao gồm: Hydra (hỗ trợ đa giao thức, tấn công song song), Medusa (tối ưu cho tấn công tốc độ cao), Ncrack (của dự án Nmap), Patator (framework linh hoạt viết bằng Python), và các script tùy chỉnh sử dụng thư viện Paramiko hoặc libssh [16]. Sự đa dạng của công cụ tấn công tạo ra các mẫu hành vi khác nhau trong dữ liệu nhật ký, đặt ra yêu cầu về khả năng tổng quát hóa (generalization) của hệ thống phát hiện.
+
+## 2.3 Các phương pháp phát hiện truyền thống
+
+### 2.3.1 Phương pháp dựa trên ngưỡng tĩnh (Static threshold-based)
+
+Phương pháp phổ biến nhất trong thực tế là thiết lập ngưỡng cố định cho số lần đăng nhập thất bại. Fail2Ban — công cụ phòng chống xâm nhập mã nguồn mở phổ biến nhất — hoạt động bằng cách giám sát tệp nhật ký hệ thống và chặn IP vi phạm qua iptables/nftables khi số lần thất bại vượt ngưỡng trong một khoảng thời gian xác định [17].
+
+Cấu hình mặc định của Fail2Ban cho SSH thường là: maxretry = 5 (chặn sau 5 lần thất bại), findtime = 600 (trong cửa sổ 10 phút), bantime = 600 (chặn trong 10 phút). Phương pháp này đơn giản, dễ triển khai và hiệu quả với tấn công brute-force tốc độ cao. Tuy nhiên, như đã phân tích ở Chương 1, ngưỡng tĩnh có những hạn chế cố hữu:
+
+- Không thể phát hiện tấn công chậm với tốc độ dưới ngưỡng
+- Không thích ứng với sự biến động tự nhiên của lưu lượng
+- Tỷ lệ false positive cao trong giờ cao điểm khi nhiều người dùng hợp pháp đăng nhập đồng thời
+- Dễ bị lẩn tránh bằng tấn công phân tán từ nhiều IP
+
+### 2.3.2 Phương pháp dựa trên danh sách (List-based)
+
+Phương pháp này sử dụng danh sách đen (blacklist) và danh sách trắng (whitelist) để kiểm soát truy cập. Các dịch vụ như AbuseIPDB, Spamhaus, và Blocklist.de cung cấp danh sách IP được biết đến với các hoạt động độc hại [18]. Hạn chế chính là tính phản ứng — IP chỉ được đưa vào danh sách đen sau khi đã thực hiện tấn công tại nơi khác, và kẻ tấn công có thể dễ dàng chuyển sang sử dụng IP mới.
+
+### 2.3.3 Phương pháp dựa trên chữ ký (Signature-based)
+
+Các hệ thống phát hiện xâm nhập (IDS) như Snort và Suricata có thể phát hiện tấn công brute-force SSH bằng cách so khớp mẫu lưu lượng mạng với các chữ ký (signatures/rules) đã biết [19]. Ví dụ, rule Snort có thể phát hiện nhiều gói tin SSH_MSG_USERAUTH_REQUEST liên tiếp. Hạn chế của phương pháp này là không thể phát hiện các biến thể tấn công mới chưa có chữ ký, và hiệu suất giảm khi lưu lượng SSH được mã hóa end-to-end khiến việc phân tích nội dung gói tin không khả thi.
+
+### 2.3.4 Phương pháp xác thực nâng cao
+
+Các biện pháp phòng chống ở mức xác thực bao gồm: chuyển sang sử dụng xác thực khóa công khai (public key authentication), triển khai xác thực hai yếu tố (two-factor authentication) qua PAM modules, thay đổi cổng SSH mặc định, và sử dụng port knocking [20]. Các biện pháp này hiệu quả nhưng không phải lúc nào cũng khả thi trong mọi môi trường, đặc biệt là các hệ thống legacy hoặc môi trường đa người dùng.
+
+<!-- Gợi ý: Bảng 2.2 - So sánh ưu nhược điểm của các phương pháp phát hiện truyền thống -->
+
+## 2.4 Học máy trong phát hiện xâm nhập
+
+### 2.4.1 Tổng quan về ứng dụng học máy trong an ninh mạng
+
+Ứng dụng học máy trong phát hiện xâm nhập mạng (Network Intrusion Detection System — NIDS) đã được nghiên cứu rộng rãi trong hai thập kỷ qua. Buczak và Guven [21] đã tổng hợp một khảo sát toàn diện về các phương pháp khai phá dữ liệu và học máy cho an ninh mạng, chỉ ra rằng các thuật toán học máy có thể đạt hiệu suất phát hiện cao hơn đáng kể so với các phương pháp dựa trên quy tắc trong nhiều tình huống.
+
+Các phương pháp học máy trong phát hiện xâm nhập được phân loại theo nhiều tiêu chí:
+
+**Theo phương thức học:**
+- *Học có giám sát (Supervised Learning):* Yêu cầu dữ liệu huấn luyện được gán nhãn (bình thường/tấn công). Các thuật toán phổ biến bao gồm Random Forest, Support Vector Machine, Neural Networks, và Gradient Boosting. Ưu điểm là độ chính xác cao khi có đủ dữ liệu huấn luyện chất lượng; nhược điểm là phụ thuộc vào dữ liệu gán nhãn và khó phát hiện các loại tấn công chưa biết [22].
+- *Học không giám sát (Unsupervised Learning):* Không cần dữ liệu gán nhãn, thay vào đó học mẫu hành vi bình thường và coi các điểm dữ liệu lệch khỏi mẫu là bất thường. Ưu điểm là có thể phát hiện các loại tấn công chưa biết (zero-day attacks); nhược điểm là tỷ lệ false positive thường cao hơn [23].
+- *Học bán giám sát (Semi-supervised Learning):* Kết hợp một lượng nhỏ dữ liệu gán nhãn với lượng lớn dữ liệu không gán nhãn. Phù hợp với thực tế khi dữ liệu gán nhãn khan hiếm và tốn kém [24].
+
+**Theo phương pháp phát hiện:**
+- *Phát hiện dựa trên sai lệch (Misuse detection):* Xây dựng mô hình cho các hành vi tấn công đã biết, phát hiện tấn công khi mẫu lưu lượng khớp với mô hình. Tương đương với phương pháp dựa trên chữ ký nhưng sử dụng mô hình học máy thay vì quy tắc thủ công [25].
+- *Phát hiện bất thường (Anomaly detection):* Xây dựng mô hình cho hành vi bình thường, phát hiện tấn công khi mẫu lưu lượng lệch khỏi mô hình. Có khả năng phát hiện tấn công chưa biết nhưng cần xác định ngưỡng phân biệt hợp lý [26].
+
+### 2.4.2 Lý do chọn phương pháp phát hiện bất thường không giám sát
+
+Trong bối cảnh phát hiện tấn công brute-force SSH, phương pháp phát hiện bất thường không giám sát được lựa chọn trong nghiên cứu này dựa trên các lý do sau:
+
+Thứ nhất, bản chất của tấn công brute-force liên tục tiến hóa. Kẻ tấn công không ngừng thay đổi kỹ thuật để lẩn tránh phát hiện, khiến các mô hình học có giám sát được huấn luyện trên dữ liệu tấn công cũ có thể không nhận diện được các biến thể mới. Phương pháp phát hiện bất thường, bằng cách mô hình hóa hành vi bình thường thay vì hành vi tấn công, có khả năng tổng quát hóa tốt hơn với các hình thức tấn công mới [27].
+
+Thứ hai, trong thực tế vận hành, dữ liệu tấn công được gán nhãn chính xác rất khó thu thập. Mặc dù dữ liệu từ honeypot cung cấp các mẫu tấn công thực tế, việc gán nhãn chính xác từng phiên đăng nhập trong môi trường vận hành là không khả thi ở quy mô lớn [28].
+
+Thứ ba, các thuật toán phát hiện bất thường không giám sát như Isolation Forest có ưu điểm về hiệu suất tính toán, cho phép xử lý dữ liệu theo thời gian thực — yêu cầu quan trọng cho hệ thống phát hiện xâm nhập [29].
+
+## 2.5 Các thuật toán phát hiện bất thường
+
+### 2.5.1 Isolation Forest (IF)
+
+#### a) Nguyên lý hoạt động
+
+Isolation Forest được đề xuất bởi Liu, Ting và Zhou vào năm 2008 tại Đại học Monash, Úc, và được công bố chính thức trên tạp chí ACM Transactions on Knowledge Discovery from Data năm 2012 [29]. Khác với hầu hết các thuật toán phát hiện bất thường dựa trên khoảng cách hoặc mật độ, Isolation Forest dựa trên nguyên lý "cô lập" (isolation): các điểm bất thường, do có giá trị đặc trưng khác biệt với đa số, sẽ bị cô lập (tách biệt khỏi các điểm khác) nhanh hơn so với các điểm bình thường khi thực hiện phân hoạch ngẫu nhiên.
+
+Thuật toán xây dựng một tập hợp các cây cô lập (Isolation Trees — iTrees) bằng cách lặp lại quá trình sau: chọn ngẫu nhiên một đặc trưng, chọn ngẫu nhiên một giá trị phân tách trong khoảng [min, max] của đặc trưng đó, và chia dữ liệu thành hai nhánh. Quá trình tiếp tục cho đến khi mỗi điểm dữ liệu được cô lập hoặc đạt độ sâu tối đa.
+
+#### b) Công thức toán học
+
+Cho tập dữ liệu X = {x₁, x₂, ..., xₙ} với n điểm dữ liệu trong không gian d chiều.
+
+**Xây dựng Isolation Tree:** Tại mỗi nút trong (internal node), thuật toán chọn ngẫu nhiên một đặc trưng q ∈ {1, 2, ..., d} và một giá trị phân tách p được chọn ngẫu nhiên đều trong khoảng [min(xq), max(xq)], trong đó xq là giá trị của đặc trưng q. Dữ liệu được chia thành hai tập con: tập con trái chứa các điểm có xq < p và tập con phải chứa các điểm có xq ≥ p.
+
+**Độ dài đường đi (Path Length):** Cho một điểm dữ liệu x, độ dài đường đi h(x) trong một Isolation Tree T là số cạnh từ nút gốc đến nút lá chứa x. Đối với nút ngoài (external node) ở độ sâu đã đạt giới hạn, cần bổ sung ước lượng cho phần còn lại:
+
+$$h(x) = e + c(T.size)$$
+
+trong đó e là số cạnh từ gốc đến nút hiện tại, T.size là kích thước tập con tại nút đó, và c(n) là độ dài đường đi trung bình của cây tìm kiếm nhị phân không thành công (unsuccessful search in BST):
+
+$$c(n) = 2H(n-1) - \frac{2(n-1)}{n}$$
+
+với H(i) = ln(i) + γ là số điều hòa (harmonic number), γ ≈ 0.5772 là hằng số Euler-Mascheroni.
+
+**Điểm bất thường (Anomaly Score):** Điểm bất thường của x được tính dựa trên kỳ vọng của độ dài đường đi trên tất cả t cây trong rừng:
+
+$$s(x, n) = 2^{-\frac{E[h(x)]}{c(n)}}$$
+
+trong đó E[h(x)] là trung bình h(x) trên t Isolation Trees.
+
+Diễn giải:
+- s → 1: điểm x có khả năng là bất thường (đường đi trung bình ngắn, bị cô lập nhanh)
+- s → 0.5: toàn bộ tập dữ liệu không có bất thường rõ rệt
+- s → 0: điểm x là bình thường (đường đi trung bình dài, khó bị cô lập)
+
+#### c) Ưu điểm trong phát hiện tấn công brute-force
+
+Isolation Forest có nhiều ưu điểm phù hợp với bài toán phát hiện tấn công brute-force SSH:
+
+- **Độ phức tạp tuyến tính:** O(t · n · log ψ), trong đó t là số cây, n là kích thước dữ liệu huấn luyện, ψ là kích thước mẫu con (sub-sampling size). Điều này cho phép xử lý thời gian thực với dữ liệu nhật ký quy mô lớn [29].
+- **Hiệu quả với dữ liệu chiều cao:** Không bị ảnh hưởng bởi "lời nguyền chiều" (curse of dimensionality) như các phương pháp dựa trên khoảng cách, phù hợp với bộ đặc trưng 14 chiều [30].
+- **Không cần giả định phân phối:** Không yêu cầu dữ liệu tuân theo phân phối cụ thể, phù hợp với dữ liệu nhật ký SSH có phân phối phức tạp [29].
+- **Khả năng xử lý outlier swamping và masking:** Cơ chế lấy mẫu con (sub-sampling) giúp giảm thiểu hiện tượng các điểm bất thường ảnh hưởng lẫn nhau [31].
+
+### 2.5.2 Local Outlier Factor (LOF)
+
+#### a) Nguyên lý hoạt động
+
+Local Outlier Factor (LOF) được đề xuất bởi Breunig, Kriegel, Ng và Sander vào năm 2000 [32]. LOF là phương pháp phát hiện bất thường dựa trên mật độ cục bộ (local density-based), so sánh mật độ cục bộ của mỗi điểm dữ liệu với mật độ cục bộ của các điểm lân cận. Ý tưởng cốt lõi là: một điểm bất thường có mật độ cục bộ thấp hơn đáng kể so với các điểm lân cận.
+
+#### b) Công thức toán học
+
+**Khoảng cách tiếp cận (Reachability Distance):** Cho hai điểm p và o, khoảng cách tiếp cận bậc k được định nghĩa:
+
+$$reach\text{-}dist_k(p, o) = \max\{k\text{-}dist(o), \; d(p, o)\}$$
+
+trong đó k-dist(o) là khoảng cách đến điểm lân cận thứ k của o, và d(p, o) là khoảng cách Euclid giữa p và o.
+
+**Mật độ tiếp cận cục bộ (Local Reachability Density):** Mật độ tiếp cận cục bộ của điểm p được tính:
+
+$$lrd_k(p) = \frac{1}{\frac{\sum_{o \in N_k(p)} reach\text{-}dist_k(p, o)}{|N_k(p)|}}$$
+
+trong đó N_k(p) là tập k điểm lân cận gần nhất của p.
+
+**Hệ số LOF:** Hệ số LOF của điểm p được tính:
+
+$$LOF_k(p) = \frac{\sum_{o \in N_k(p)} \frac{lrd_k(o)}{lrd_k(p)}}{|N_k(p)}} = \frac{1}{|N_k(p)|} \sum_{o \in N_k(p)} \frac{lrd_k(o)}{lrd_k(p)}$$
+
+Diễn giải:
+- LOF ≈ 1: mật độ cục bộ của p tương đương với các điểm lân cận (bình thường)
+- LOF >> 1: mật độ cục bộ của p thấp hơn nhiều so với các điểm lân cận (bất thường)
+
+#### c) Hạn chế trong bối cảnh phát hiện tấn công SSH
+
+Mặc dù LOF hiệu quả trong nhiều bài toán phát hiện bất thường, thuật toán có một số hạn chế trong bối cảnh phát hiện tấn công SSH thời gian thực:
+
+- **Độ phức tạp cao:** O(n²) cho tính toán khoảng cách k-nearest neighbors, trở nên tốn kém khi xử lý dữ liệu nhật ký liên tục [33].
+- **Nhạy cảm với tham số k:** Hiệu năng phụ thuộc đáng kể vào lựa chọn giá trị k (số lân cận), và không có phương pháp xác định k tối ưu cho mọi tập dữ liệu [32].
+- **Yêu cầu lưu trữ toàn bộ dữ liệu huấn luyện:** Để tính LOF cho điểm dữ liệu mới, cần truy cập toàn bộ tập dữ liệu huấn luyện, gây áp lực về bộ nhớ [34].
+
+### 2.5.3 One-Class Support Vector Machine (OCSVM)
+
+#### a) Nguyên lý hoạt động
+
+One-Class SVM được đề xuất bởi Schölkopf, Platt, Shawe-Taylor, Smola và Williamson năm 2001 [35]. Thuật toán mở rộng SVM truyền thống cho bài toán phát hiện bất thường bằng cách tìm siêu phẳng (hyperplane) trong không gian đặc trưng có chiều cao hơn sao cho tách biệt tối đa các điểm dữ liệu huấn luyện (bình thường) khỏi gốc tọa độ. Các điểm nằm phía gốc tọa độ so với siêu phẳng được coi là bất thường.
+
+#### b) Công thức toán học
+
+**Bài toán tối ưu:** Cho tập dữ liệu huấn luyện X = {x₁, ..., xₙ}, OCSVM giải bài toán tối ưu:
+
+$$\min_{w, \xi, \rho} \frac{1}{2}\|w\|^2 + \frac{1}{\nu n}\sum_{i=1}^{n}\xi_i - \rho$$
+
+với các ràng buộc:
+
+$$w \cdot \Phi(x_i) \geq \rho - \xi_i, \quad \xi_i \geq 0, \quad i = 1, ..., n$$
+
+trong đó:
+- w là vector pháp tuyến của siêu phẳng trong không gian đặc trưng
+- Φ(·) là hàm ánh xạ sang không gian đặc trưng chiều cao
+- ρ là khoảng cách từ gốc tọa độ đến siêu phẳng
+- ξᵢ là biến lỏng (slack variables) cho phép sai lệch
+- ν ∈ (0, 1] là tham số điều khiển tỷ lệ bất thường dự kiến
+
+**Hàm quyết định:** Sau khi giải bài toán đối ngẫu, hàm quyết định cho điểm mới x:
+
+$$f(x) = \text{sign}\left(\sum_{i=1}^{n} \alpha_i K(x_i, x) - \rho\right)$$
+
+trong đó K(xᵢ, x) là hàm nhân (kernel function). Hàm nhân RBF (Radial Basis Function) phổ biến nhất:
+
+$$K(x_i, x) = \exp\left(-\gamma\|x_i - x\|^2\right)$$
+
+f(x) = +1 cho điểm bình thường, f(x) = -1 cho điểm bất thường.
+
+#### c) Ưu và nhược điểm
+
+**Ưu điểm:** OCSVM có cơ sở lý thuyết vững chắc từ lý thuyết tối ưu và kernel methods, cho kết quả tốt khi ranh giới quyết định phức tạp nhờ kernel trick, và tham số ν có ý nghĩa trực quan — giới hạn trên của tỷ lệ bất thường [36].
+
+**Nhược điểm:** Độ phức tạp huấn luyện O(n²) đến O(n³) với SVM solver truyền thống, nhạy cảm cao với lựa chọn kernel và tham số (γ, ν), và không có cơ chế tự nhiên để xử lý dữ liệu streaming — cần tái huấn luyện khi dữ liệu thay đổi [37].
+
+### 2.5.4 So sánh ba thuật toán
+
+<!-- Gợi ý: Bảng 2.3 - So sánh đặc điểm của Isolation Forest, LOF và One-Class SVM -->
+<!-- Các tiêu chí: Nguyên lý | Độ phức tạp huấn luyện | Độ phức tạp dự đoán | Nhạy cảm tham số | Khả năng streaming | Xử lý chiều cao | Giả định phân phối -->
+
+Về mặt lý thuyết, Isolation Forest có ưu thế về hiệu suất tính toán (O(n log n) so với O(n²) của LOF và O(n²-n³) của OCSVM), khả năng xử lý dữ liệu chiều cao, và không yêu cầu giả định phân phối. LOF có ưu thế trong việc phát hiện bất thường cục bộ (local outliers) — các điểm chỉ bất thường khi xét trong ngữ cảnh lân cận. OCSVM có cơ sở lý thuyết vững chắc nhất và cho phép kiểm soát chặt chẽ tỷ lệ bất thường qua tham số ν [38].
+
+Trong nghiên cứu này, Isolation Forest được chọn làm thuật toán chính dựa trên cân nhắc về hiệu suất tính toán phù hợp với xử lý thời gian thực, khả năng tổng quát hóa tốt, và kết quả đánh giá thực nghiệm. LOF và OCSVM được sử dụng làm cơ sở đối sánh (benchmark) để đánh giá khách quan hiệu năng.
+
+## 2.6 Phương pháp ngưỡng động trong phát hiện bất thường
+
+### 2.6.1 Hạn chế của ngưỡng tĩnh
+
+Trong các hệ thống phát hiện bất thường, ngưỡng (threshold) đóng vai trò quyết định trong việc phân loại một điểm dữ liệu là bình thường hay bất thường. Ngưỡng tĩnh — một giá trị cố định được xác định trước — có ưu điểm về tính đơn giản nhưng không phù hợp với dữ liệu có đặc tính thay đổi theo thời gian (non-stationary data) [39].
+
+Trong bối cảnh giám sát SSH, lưu lượng truy cập thay đổi đáng kể theo thời gian: giờ làm việc có nhiều đăng nhập hợp pháp hơn ngoài giờ, ngày cuối tuần khác ngày thường, và các sự kiện đặc biệt (bảo trì hệ thống, triển khai ứng dụng) tạo ra các đỉnh lưu lượng bất thường nhưng hợp pháp. Ngưỡng tĩnh không thể thích ứng với những biến động này, dẫn đến hai vấn đề: cảnh báo sai khi lưu lượng cao bất thường nhưng hợp pháp (false positive), và bỏ sót tấn công khi lưu lượng nền thấp (false negative).
+
+### 2.6.2 Exponentially Weighted Moving Average (EWMA)
+
+EWMA là phương pháp làm mượt chuỗi thời gian (time series smoothing) gán trọng số giảm dần theo hàm mũ cho các quan sát cũ hơn. Được giới thiệu bởi Roberts năm 1959 trong bối cảnh kiểm soát chất lượng thống kê [40], EWMA đã được ứng dụng rộng rãi trong nhiều lĩnh vực bao gồm phát hiện bất thường mạng [41].
+
+**Công thức EWMA:**
+
+$$\hat{\mu}_t = \alpha \cdot x_t + (1 - \alpha) \cdot \hat{\mu}_{t-1}$$
+
+trong đó:
+- x_t là giá trị quan sát tại thời điểm t
+- μ̂_t là giá trị EWMA tại thời điểm t
+- α ∈ (0, 1] là hệ số làm mượt (smoothing factor)
+
+Giá trị α nhỏ cho kết quả mượt hơn (ít nhạy với biến động ngắn hạn), α lớn cho kết quả phản ứng nhanh hơn với thay đổi. Trong phát hiện bất thường, EWMA được sử dụng để ước lượng mức nền (baseline) của anomaly score, từ đó xác định ngưỡng:
+
+$$\sigma_t^2 = \alpha \cdot (x_t - \hat{\mu}_t)^2 + (1 - \alpha) \cdot \sigma_{t-1}^2$$
+
+$$threshold_t = \hat{\mu}_t + k \cdot \sigma_t$$
+
+trong đó k là hệ số nhạy (sensitivity factor), thường nằm trong khoảng [2, 3] theo quy tắc phân phối chuẩn.
+
+### 2.6.3 Adaptive Percentile
+
+Phương pháp Adaptive Percentile xác định ngưỡng dựa trên phân vị (percentile) của phân phối anomaly score trong một cửa sổ thời gian trượt (sliding window). Thay vì giả định phân phối chuẩn như EWMA, phương pháp này trực tiếp sử dụng phân phối thực nghiệm (empirical distribution) của dữ liệu [42].
+
+**Công thức:**
+
+$$threshold_t = P_q(S_W)$$
+
+trong đó:
+- S_W = {s_{t-W+1}, s_{t-W+2}, ..., s_t} là tập anomaly scores trong cửa sổ W gần nhất
+- P_q là phân vị thứ q (ví dụ q = 95 cho phân vị 95%)
+
+Ưu điểm chính là không yêu cầu giả định phân phối và tự nhiên thích ứng với sự thay đổi của phân phối dữ liệu. Nhược điểm là cần lưu trữ dữ liệu trong cửa sổ và nhạy cảm với kích thước cửa sổ W.
+
+### 2.6.4 Phương pháp kết hợp EWMA-Adaptive Percentile
+
+Nghiên cứu này đề xuất kết hợp EWMA và Adaptive Percentile để tận dụng ưu điểm của cả hai phương pháp: EWMA cung cấp khả năng làm mượt và theo dõi xu hướng dài hạn, trong khi Adaptive Percentile phản ánh chính xác phân phối thực tế trong ngắn hạn.
+
+**Ngưỡng kết hợp:**
+
+$$threshold_t = \beta \cdot T_{EWMA,t} + (1 - \beta) \cdot T_{Percentile,t}$$
+
+trong đó:
+- T_{EWMA,t} = μ̂_t + k · σ_t là ngưỡng EWMA
+- T_{Percentile,t} = P_q(S_W) là ngưỡng Adaptive Percentile
+- β ∈ [0, 1] là trọng số cân bằng giữa hai phương pháp
+
+Cơ chế này cho phép hệ thống duy trì sự ổn định (stability) từ EWMA trong khi vẫn phản ứng nhạy (responsiveness) với các thay đổi cục bộ từ Adaptive Percentile. Tham số β có thể được điều chỉnh tùy theo yêu cầu: β lớn ưu tiên ổn định (giảm false positive), β nhỏ ưu tiên nhạy bén (giảm false negative).
+
+Ưu thế của phương pháp kết hợp so với từng phương pháp đơn lẻ đã được chỉ ra trong các nghiên cứu về giám sát an ninh mạng [43], nơi mà sự cân bằng giữa độ nhạy và tính ổn định là yếu tố then chốt.
+
+<!-- Gợi ý: Hình 2.2 - Minh họa sự khác biệt giữa ngưỡng tĩnh, EWMA, Adaptive Percentile và ngưỡng kết hợp trên cùng một chuỗi dữ liệu anomaly score -->
+
+## 2.7 ELK Stack cho giám sát an ninh
+
+### 2.7.1 Tổng quan về ELK Stack
+
+ELK Stack là bộ ba công cụ mã nguồn mở được phát triển bởi Elastic N.V., bao gồm Elasticsearch, Logstash và Kibana. Được sử dụng rộng rãi trong lĩnh vực quản lý nhật ký (log management) và phân tích dữ liệu, ELK Stack đã trở thành nền tảng phổ biến cho Security Information and Event Management (SIEM) và giám sát an ninh mạng [44].
+
+**Elasticsearch** là công cụ tìm kiếm và phân tích phân tán dựa trên Apache Lucene. Elasticsearch lưu trữ dữ liệu dưới dạng tài liệu JSON và hỗ trợ tìm kiếm toàn văn (full-text search), tổng hợp (aggregation), và phân tích thời gian thực. Kiến trúc phân tán (distributed) với khả năng sharding và replication đảm bảo tính mở rộng và khả dụng cao [45].
+
+**Logstash** là đường ống xử lý dữ liệu (data processing pipeline) phía máy chủ, có khả năng thu thập dữ liệu đồng thời từ nhiều nguồn (inputs), chuyển đổi và làm giàu dữ liệu (filters), và gửi đến nhiều đích (outputs). Logstash hỗ trợ hơn 200 plugin cho đầu vào, bộ lọc và đầu ra, bao gồm đọc tệp nhật ký, phân tích cú pháp (parsing) với Grok, và gửi dữ liệu đến Elasticsearch [46].
+
+**Kibana** là nền tảng trực quan hóa và khám phá dữ liệu, cung cấp giao diện web để tương tác với dữ liệu trong Elasticsearch. Kibana hỗ trợ tạo bảng điều khiển (dashboard), biểu đồ, bản đồ và cảnh báo, phục vụ mục đích giám sát an ninh theo thời gian thực [47].
+
+### 2.7.2 ELK Stack trong Security Operations
+
+Việc sử dụng ELK Stack cho giám sát an ninh mạng đã được ghi nhận trong nhiều nghiên cứu và triển khai thực tế. Gonzalez và cộng sự [48] đã chứng minh hiệu quả của ELK Stack trong việc phân tích nhật ký SSH với khả năng xử lý hàng triệu sự kiện mỗi ngày. Nghiên cứu của Chuvakin và cộng sự [49] chỉ ra rằng ELK Stack có thể thay thế các giải pháp SIEM thương mại đắt đỏ cho các tổ chức vừa và nhỏ.
+
+Trong kiến trúc giám sát SSH, quy trình hoạt động của ELK Stack như sau:
+
+1. **Thu thập (Collection):** Filebeat hoặc Logstash đọc tệp nhật ký SSH (/var/log/auth.log) theo thời gian thực
+2. **Phân tích (Parsing):** Logstash filter sử dụng Grok pattern để trích xuất các trường thông tin: timestamp, IP nguồn, tên đăng nhập, kết quả xác thực
+3. **Lưu trữ (Indexing):** Dữ liệu đã cấu trúc được đánh chỉ mục trong Elasticsearch với index pattern theo ngày
+4. **Trực quan hóa (Visualization):** Kibana dashboard hiển thị các chỉ số an ninh: số lần đăng nhập thất bại theo IP, phân bố địa lý, xu hướng theo thời gian
+5. **Cảnh báo (Alerting):** Elasticsearch Watcher hoặc Kibana Alerting tạo cảnh báo khi phát hiện dấu hiệu tấn công
+
+### 2.7.3 Tích hợp AI với ELK Stack
+
+Việc tích hợp mô hình học máy với ELK Stack có thể thực hiện theo nhiều cách. Elastic đã tích hợp sẵn module Machine Learning trong X-Pack (từ phiên bản 5.x), hỗ trợ phát hiện bất thường tự động trên dữ liệu chuỗi thời gian [50]. Tuy nhiên, module này có giới hạn về tùy chỉnh thuật toán và yêu cầu giấy phép thương mại.
+
+Cách tiếp cận trong nghiên cứu này là xây dựng pipeline tùy chỉnh: dữ liệu từ Elasticsearch được truy xuất qua API, xử lý và trích xuất đặc trưng bằng Python, đưa vào mô hình Isolation Forest để tính anomaly score, và ghi kết quả ngược lại Elasticsearch để trực quan hóa trên Kibana. Cách tiếp cận này mang lại sự linh hoạt tối đa trong việc tùy chỉnh thuật toán và pipeline xử lý.
+
+<!-- Gợi ý: Hình 2.3 - Kiến trúc tích hợp ELK Stack với mô hình AI cho giám sát SSH -->
+
+## 2.8 Các công trình nghiên cứu liên quan
+
+### 2.8.1 Nghiên cứu quốc tế
+
+**Najafabadi và cộng sự (2015)** [51] đã nghiên cứu phát hiện tấn công brute-force SSH sử dụng dữ liệu NetFlow tổng hợp. Các tác giả sử dụng thuật toán Random Forest trên bộ dữ liệu CERT NetFlow và đạt độ chính xác 99% trong phân biệt lưu lượng SSH bình thường và tấn công. Tuy nhiên, nghiên cứu sử dụng học có giám sát với dữ liệu gán nhãn đầy đủ, và đặc trưng được trích xuất từ NetFlow (dữ liệu tầng mạng) thay vì nhật ký SSH (dữ liệu tầng ứng dụng), hạn chế khả năng phát hiện tấn công tinh vi ở tầng ứng dụng.
+
+**Hofstede, Pras và Sperotto (2018)** [52] đề xuất hệ thống SSH Compromise Detection sử dụng flow-based features. Nghiên cứu khai thác đặc trưng dựa trên luồng mạng (flow-based) kết hợp với Decision Tree và Naive Bayes, đạt True Positive Rate trên 90%. Đóng góp chính là bộ đặc trưng flow-based phân biệt giữa giai đoạn brute-force và giai đoạn khai thác sau khi xâm nhập thành công.
+
+**Kumari và Jain (2020)** [53] nghiên cứu phương pháp phát hiện bất thường dựa trên Isolation Forest cho hệ thống IoT. Các tác giả áp dụng Isolation Forest trên bộ dữ liệu NSL-KDD và CICIDS2017, đạt F1-score 89.7% trên CICIDS2017. Nghiên cứu chứng minh tính hiệu quả của Isolation Forest trong phát hiện bất thường mạng nhưng không tập trung vào giao thức SSH cụ thể.
+
+**Moustafa và Slay (2016)** [54] phát triển bộ dữ liệu UNSW-NB15 và đánh giá nhiều thuật toán học máy trên bộ dữ liệu này, bao gồm Isolation Forest. Kết quả cho thấy Isolation Forest đạt Detection Rate 83.1% với False Alarm Rate 14.2% trên dữ liệu mạng tổng hợp.
+
+**Starov và cộng sự (2019)** [55] đề xuất phương pháp phát hiện tấn công brute-force SSH dựa trên hành vi thời gian (temporal behavior), sử dụng các đặc trưng về khoảng cách giữa các lần thử đăng nhập, phân bố thời gian và mẫu xác thực. Kết quả cho thấy các đặc trưng thời gian cải thiện đáng kể khả năng phát hiện tấn công chậm so với chỉ sử dụng đặc trưng tần suất.
+
+**Ahmad và cộng sự (2021)** [56] đã tiến hành nghiên cứu toàn diện về các phương pháp phát hiện bất thường mạng, so sánh Isolation Forest, LOF, OCSVM và Autoencoder trên nhiều bộ dữ liệu. Kết quả cho thấy Isolation Forest đạt cân bằng tốt nhất giữa hiệu suất phát hiện và thời gian xử lý.
+
+**Sperotto và cộng sự (2017)** [57] nghiên cứu tấn công brute-force SSH trong môi trường mạng thực tế của Đại học Twente (Hà Lan), phân tích hơn 14 triệu sự kiện SSH. Nghiên cứu xác định các mẫu hành vi đặc trưng của tấn công brute-force và đề xuất phương pháp phân loại dựa trên Hidden Markov Model.
+
+**Satoh và cộng sự (2022)** [58] đề xuất hệ thống phát hiện tấn công SSH sử dụng Deep Learning (LSTM-Autoencoder) với khả năng phát hiện sớm. Nghiên cứu đạt Recall 97.2% với thời gian phát hiện trung bình 45 giây trước khi tấn công leo thang. Tuy nhiên, mô hình Deep Learning đòi hỏi tài nguyên tính toán lớn hơn đáng kể so với các phương pháp truyền thống.
+
+### 2.8.2 Nghiên cứu trong nước
+
+**Nguyễn Văn Thắng và Trần Minh Quang (2021)** [59] nghiên cứu ứng dụng học máy trong phát hiện xâm nhập mạng tại Việt Nam, sử dụng Random Forest và XGBoost trên bộ dữ liệu CICIDS2017. Nghiên cứu đạt độ chính xác 98.5% nhưng tập trung vào phát hiện xâm nhập mạng nói chung, không chuyên biệt cho SSH brute-force.
+
+**Lê Hải Việt và cộng sự (2022)** [60] đề xuất hệ thống giám sát an ninh mạng sử dụng ELK Stack tại các doanh nghiệp vừa và nhỏ Việt Nam. Nghiên cứu cung cấp kinh nghiệm triển khai ELK Stack thực tế và chỉ ra các thách thức về hiệu suất và cấu hình trong môi trường Việt Nam.
+
+**Phạm Ngọc Hưng (2020)** [61] nghiên cứu các giải pháp phòng chống tấn công brute-force cho hệ thống SSH tại các cơ quan nhà nước. Nghiên cứu tập trung vào các biện pháp truyền thống (Fail2Ban, iptables, port knocking) và đánh giá hiệu quả trong môi trường thực tế. Kết quả cho thấy các biện pháp truyền thống hiệu quả với tấn công cơ bản nhưng thiếu khả năng xử lý tấn công tinh vi.
+
+**Trần Đức Khánh và Nguyễn Thị Thanh Huyền (2023)** [62] nghiên cứu ứng dụng Isolation Forest trong phát hiện bất thường trên dữ liệu log hệ thống. Nghiên cứu triển khai trên môi trường giám sát tập trung và đạt F1-score 85.3% trên dữ liệu nhật ký tổng hợp. Đây là một trong số ít nghiên cứu tại Việt Nam sử dụng Isolation Forest cho phân tích nhật ký an ninh.
+
+### 2.8.3 Bảng so sánh tổng hợp
+
+<!-- Gợi ý: Bảng 2.4 - Bảng so sánh tổng hợp các công trình nghiên cứu liên quan -->
+<!-- Các cột gợi ý: Tác giả (Năm) | Phương pháp | Dữ liệu | Đặc trưng | Kết quả chính | Hạn chế -->
+
+| Tác giả (Năm) | Phương pháp | Dữ liệu | Kết quả chính | Hạn chế |
+|----------------|-------------|----------|---------------|---------|
+| Najafabadi và cs. (2015) [51] | Random Forest | CERT NetFlow | Accuracy 99% | Supervised, tầng mạng |
+| Hofstede và cs. (2018) [52] | Decision Tree, NB | Flow-based | TPR > 90% | Không phát hiện sớm |
+| Kumari và Jain (2020) [53] | Isolation Forest | NSL-KDD, CICIDS2017 | F1 89.7% | Không chuyên SSH |
+| Moustafa và Slay (2016) [54] | Isolation Forest | UNSW-NB15 | DR 83.1% | FAR cao (14.2%) |
+| Starov và cs. (2019) [55] | Temporal features | SSH logs | Cải thiện phát hiện slow attack | Ngưỡng tĩnh |
+| Ahmad và cs. (2021) [56] | IF, LOF, OCSVM, AE | Nhiều bộ | IF cân bằng tốt nhất | Không tích hợp hệ thống |
+| Sperotto và cs. (2017) [57] | HMM | SSH thực tế | Phân tích 14M sự kiện | Phức tạp triển khai |
+| Satoh và cs. (2022) [58] | LSTM-Autoencoder | SSH logs | Recall 97.2% | Tài nguyên tính toán lớn |
+| Nguyễn V.T. và Trần M.Q. (2021) [59] | RF, XGBoost | CICIDS2017 | Accuracy 98.5% | Supervised, tổng quát |
+| Trần Đ.K. và Nguyễn T.T.H. (2023) [62] | Isolation Forest | System logs | F1 85.3% | Không chuyên SSH |
+| **Nghiên cứu này** | **IF + EWMA-AP** | **Honeypot + Sim** | **F1 88.63%, Recall 99.99%** | **Xem mục 1.5** |
+
+## 2.9 Đóng góp nghiên cứu và khoảng trống nghiên cứu
+
+### 2.9.1 Xác định khoảng trống nghiên cứu
+
+Qua phân tích tổng quan tài liệu ở các phần trên, nghiên cứu này xác định các khoảng trống (research gaps) sau đây trong lĩnh vực phát hiện tấn công brute-force SSH:
+
+**Khoảng trống 1: Thiếu tích hợp end-to-end.** Phần lớn các nghiên cứu hiện tại tập trung vào khía cạnh thuật toán (phát triển và đánh giá mô hình) mà chưa giải quyết bài toán tích hợp hoàn chỉnh từ thu thập dữ liệu, trích xuất đặc trưng, phát hiện bất thường, đến phản ứng tự động. Khoảng cách giữa nghiên cứu và triển khai thực tế (research-to-deployment gap) vẫn là thách thức lớn [63]. Cụ thể, các nghiên cứu của Kumari và Jain (2020), Moustafa và Slay (2016), và Ahmad và cộng sự (2021) đều đánh giá thuật toán trên bộ dữ liệu benchmark mà không đề cập đến kiến trúc triển khai thực tế.
+
+**Khoảng trống 2: Hạn chế về ngưỡng phát hiện.** Các nghiên cứu sử dụng phát hiện bất thường thường áp dụng ngưỡng tĩnh hoặc ngưỡng cố định dựa trên phân phối huấn luyện. Việc nghiên cứu và triển khai cơ chế ngưỡng động thích ứng — đặc biệt là kết hợp nhiều phương pháp — trong bối cảnh phát hiện tấn công SSH còn rất hạn chế. Starov và cộng sự (2019) đã nhận diện vấn đề này nhưng chưa đề xuất giải pháp ngưỡng động cụ thể.
+
+**Khoảng trống 3: Dự đoán sớm chưa được khai thác đầy đủ.** Mặc dù một số nghiên cứu đề cập đến khả năng phát hiện sớm (Satoh và cộng sự, 2022), phần lớn các hệ thống vẫn hoạt động theo mô hình phản ứng (reactive) — phát hiện và chặn sau khi tấn công đã diễn ra. Tiềm năng sử dụng đặc trưng hành vi trong cửa sổ thời gian ngắn để dự đoán ý đồ tấn công trước khi nó leo thang chưa được khai thác đầy đủ.
+
+**Khoảng trống 4: Thiếu đánh giá trên dữ liệu tấn công thực tế.** Nhiều nghiên cứu sử dụng các bộ dữ liệu benchmark cũ (NSL-KDD, CICIDS) không phản ánh chính xác đặc điểm của tấn công brute-force SSH hiện đại. Việc sử dụng dữ liệu từ honeypot để thu thập mẫu tấn công thực tế cho huấn luyện và đánh giá mô hình còn chưa phổ biến.
+
+**Khoảng trống 5: Nghiên cứu trong nước còn hạn chế.** Số lượng nghiên cứu tại Việt Nam về ứng dụng AI trong phát hiện tấn công SSH còn rất ít. Các nghiên cứu hiện có chủ yếu tập trung vào các biện pháp truyền thống hoặc phát hiện xâm nhập mạng tổng quát, chưa có nghiên cứu chuyên sâu kết hợp thuật toán phát hiện bất thường hiện đại với hệ thống giám sát an ninh tích hợp cho SSH.
+
+### 2.9.2 Đóng góp của nghiên cứu này
+
+Dựa trên việc xác định các khoảng trống nghiên cứu, luận văn này đưa ra các đóng góp sau:
+
+**Đóng góp 1: Hệ thống tích hợp end-to-end.** Nghiên cứu thiết kế và triển khai kiến trúc hệ thống hoàn chỉnh từ thu thập nhật ký SSH (qua ELK Stack), trích xuất đặc trưng (14 features/IP/5 phút), phát hiện bất thường (Isolation Forest), đến phản ứng tự động (Fail2Ban). Toàn bộ hệ thống được đóng gói bằng Docker, giải quyết trực tiếp khoảng trống về tích hợp end-to-end.
+
+**Đóng góp 2: Cơ chế ngưỡng động kết hợp.** Đề xuất và triển khai phương pháp ngưỡng động EWMA-Adaptive Percentile hybrid, cho phép hệ thống tự động điều chỉnh ngưỡng phát hiện theo đặc tính biến động của lưu lượng SSH. Đây là đóng góp giải quyết khoảng trống về phương pháp ngưỡng thích ứng trong bối cảnh phát hiện tấn công SSH.
+
+**Đóng góp 3: Khả năng dự đoán sớm.** Bộ 14 đặc trưng hành vi được thiết kế để nắm bắt các dấu hiệu tấn công từ giai đoạn sớm (giai đoạn trinh sát và thăm dò ban đầu), kết hợp với cửa sổ thời gian 5 phút cho phép nhận diện ý đồ tấn công trước khi cuộc tấn công toàn diện diễn ra.
+
+**Đóng góp 4: Đánh giá trên dữ liệu thực tế.** Sử dụng dữ liệu tấn công thực tế từ honeypot (119.729 dòng) kết hợp dữ liệu mô phỏng hành vi bình thường (54.521 dòng), cung cấp đánh giá sát với điều kiện vận hành thực tế hơn so với các bộ dữ liệu benchmark.
+
+**Đóng góp 5: So sánh có hệ thống.** Cung cấp đánh giá so sánh có hệ thống giữa Isolation Forest (F1=88.63%, Recall=99.99%), LOF (F1=90.45%) và One-Class SVM (F1=91.31%) trên cùng bộ dữ liệu SSH, góp phần vào hiểu biết về hiệu năng của các thuật toán phát hiện bất thường trong lĩnh vực cụ thể này.
+
+**Đóng góp 6: Tài liệu tham khảo cho cộng đồng trong nước.** Là một trong số ít nghiên cứu tại Việt Nam kết hợp AI hiện đại với giám sát an ninh SSH, luận văn cung cấp tài liệu tham khảo có giá trị cho các nghiên cứu và triển khai trong nước.
+
+### 2.9.3 Định vị nghiên cứu
+
+Nghiên cứu này được định vị tại giao điểm của ba lĩnh vực: (1) An ninh mạng — cụ thể là phát hiện và phòng chống tấn công brute-force SSH; (2) Học máy — cụ thể là phát hiện bất thường không giám sát với Isolation Forest; và (3) Kỹ thuật hệ thống — cụ thể là tích hợp ELK Stack, Docker và Fail2Ban. Sự kết hợp ba lĩnh vực này tạo nên tính mới (novelty) và giá trị thực tiễn của nghiên cứu, phân biệt với các công trình trước đó chủ yếu tập trung vào một hoặc hai lĩnh vực.
+
+<!-- Gợi ý: Hình 2.4 - Sơ đồ Venn thể hiện vị trí nghiên cứu tại giao điểm ba lĩnh vực -->
+
+---
+
+## Tài liệu tham khảo Chương 2
+
+[1] T. Ylönen, "SSH – Secure Login Connections over the Internet," in *Proc. 6th USENIX Security Symposium*, 1996, pp. 37–42.
+
+[2] T. Ylönen and C. Lonvick, "The Secure Shell (SSH) Protocol Architecture," RFC 4251, *IETF*, 2006.
+
+[3] D. J. Barrett, R. E. Silverman, and R. G. Byrnes, *SSH, The Secure Shell: The Definitive Guide*, 2nd ed., O'Reilly Media, 2005.
+
+[4] T. Ylönen and C. Lonvick, "The Secure Shell (SSH) Authentication Protocol," RFC 4252, *IETF*, 2006.
+
+[5] T. Ylönen and C. Lonvick, "The Secure Shell (SSH) Connection Protocol," RFC 4254, *IETF*, 2006.
+
+[6] OpenSSH, "sshd_config — OpenSSH SSH daemon configuration file," *OpenBSD Manual Pages*, https://man.openbsd.org/sshd_config.
+
+[7] D. Florêncio and C. Herley, "A large-scale study of web password habits," in *Proc. 16th International Conference on World Wide Web*, 2007, pp. 657–666.
+
+[8] M. Dürmuth, T. Kranz, and M. Mannan, "On the real-world effectiveness of SSH brute-force attacks," in *Proc. NDSS Workshop on Usable Security (USEC)*, 2015.
+
+[9] A. Sperotto, G. Schaffrath, R. Sadre, C. Morariu, A. Pras, and B. Stiller, "An overview of IP flow-based intrusion detection," *IEEE Communications Surveys & Tutorials*, vol. 12, no. 3, pp. 343–356, 2010.
+
+[10] M. Bishop, "A taxonomy of password attacks," in *Computer Security Applications Conference*, 1995.
+
+[11] J. Owens and J. Matthews, "A study of passwords and methods used in brute-force SSH attacks," in *Proc. USENIX Workshop on Large-Scale Exploits and Emergent Threats (LEET)*, 2008.
+
+[12] D. Wang, Z. Zhang, P. Wang, J. Yan, and X. Huang, "Targeted online password guessing: An underestimated threat," in *Proc. ACM CCS*, 2016, pp. 1242–1254.
+
+[13] B. Cheswick and S. M. Bellovin, *Firewalls and Internet Security: Repelling the Wily Hacker*, 2nd ed., Addison-Wesley, 2003.
+
+[14] J. Owens and J. Matthews, "A study of passwords and methods used in brute-force SSH attacks," in *Proc. USENIX LEET*, 2008.
+
+[15] A. K. Das, J. Bonneau, M. Caesar, N. Borisov, and X. Wang, "The tangled web of password reuse," in *Proc. NDSS*, 2014.
+
+[16] D. van Heesch, "Hydra: A fast and flexible online password cracking tool," *THC Project*, https://github.com/vanhauser-thc/thc-hydra.
+
+[17] Fail2Ban, "Fail2Ban documentation," https://www.fail2ban.org/.
+
+[18] AbuseIPDB, "IP address abuse reports," https://www.abuseipdb.com/.
+
+[19] M. Roesch, "Snort: Lightweight intrusion detection for networks," in *Proc. USENIX LISA*, 1999.
+
+[20] M. Krzywinski, "Port knocking: Network authentication across closed ports," *SysAdmin Magazine*, vol. 12, pp. 12–17, 2003.
+
+[21] A. L. Buczak and E. Guven, "A survey of data mining and machine learning methods for cyber security intrusion detection," *IEEE Communications Surveys & Tutorials*, vol. 18, no. 2, pp. 1153–1176, 2016.
+
+[22] P. Mishra, V. Varadharajan, U. Tupakula, and E. S. Pilli, "A detailed investigation and analysis of using machine learning techniques for intrusion detection," *IEEE Communications Surveys & Tutorials*, vol. 21, no. 1, pp. 686–728, 2019.
+
+[23] M. Ahmed, A. N. Mahmood, and J. Hu, "A survey of network anomaly detection techniques," *Journal of Network and Computer Applications*, vol. 60, pp. 19–31, 2016.
+
+[24] G. Pang, C. Shen, L. Cao, and A. Van Den Hengel, "Deep learning for anomaly detection: A review," *ACM Computing Surveys*, vol. 54, no. 2, pp. 1–38, 2021.
+
+[25] V. Kumar, "Parallel and distributed computing for cybersecurity," *IEEE Distributed Systems Online*, vol. 6, no. 10, 2005.
+
+[26] V. Chandola, A. Banerjee, and V. Kumar, "Anomaly detection: A survey," *ACM Computing Surveys*, vol. 41, no. 3, pp. 1–58, 2009.
+
+[27] R. Sommer and V. Paxson, "Outside the closed world: On using machine learning for network intrusion detection," in *Proc. IEEE Symposium on Security and Privacy*, 2010, pp. 305–316.
+
+[28] K. Leung and C. Leckie, "Unsupervised anomaly detection in network intrusion detection using clusters," in *Proc. Australasian Computer Science Conference*, 2005, pp. 333–342.
+
+[29] F. T. Liu, K. M. Ting, and Z.-H. Zhou, "Isolation-based anomaly detection," *ACM Transactions on Knowledge Discovery from Data*, vol. 6, no. 1, pp. 1–39, 2012.
+
+[30] S. Hariri, M. C. Kind, and R. J. Brunner, "Extended Isolation Forest," *IEEE Transactions on Knowledge and Data Engineering*, vol. 33, no. 4, pp. 1479–1489, 2021.
+
+[31] F. T. Liu, K. M. Ting, and Z.-H. Zhou, "Isolation Forest," in *Proc. IEEE International Conference on Data Mining (ICDM)*, 2008, pp. 413–422.
+
+[32] M. M. Breunig, H.-P. Kriegel, R. T. Ng, and J. Sander, "LOF: Identifying density-based local outliers," in *Proc. ACM SIGMOD International Conference on Management of Data*, 2000, pp. 93–104.
+
+[33] J. Tang, Z. Chen, A. W. Fu, and D. W. Cheung, "Enhancing effectiveness of outlier detections for low density patterns," in *Proc. Pacific-Asia Conference on Knowledge Discovery and Data Mining*, 2002, pp. 535–548.
+
+[34] D. Pokrajac, A. Lazarevic, and L. J. Latecki, "Incremental local outlier detection for data streams," in *Proc. IEEE Symposium on Computational Intelligence and Data Mining*, 2007, pp. 504–515.
+
+[35] B. Schölkopf, J. C. Platt, J. Shawe-Taylor, A. J. Smola, and R. C. Williamson, "Estimating the support of a high-dimensional distribution," *Neural Computation*, vol. 13, no. 7, pp. 1443–1471, 2001.
+
+[36] D. M. J. Tax and R. P. W. Duin, "Support vector data description," *Machine Learning*, vol. 54, no. 1, pp. 45–66, 2004.
+
+[37] S. S. Khan and M. G. Madden, "One-class classification: Taxonomy of study and review of techniques," *The Knowledge Engineering Review*, vol. 29, no. 3, pp. 345–374, 2014.
+
+[38] M. Goldstein and S. Uchida, "A comparative evaluation of unsupervised anomaly detection algorithms for multivariate data," *PLOS ONE*, vol. 11, no. 4, e0152173, 2016.
+
+[39] D. J. Hill and B. S. Minsker, "Anomaly detection in streaming environmental sensor data: A data-driven modeling approach," *Environmental Modelling & Software*, vol. 25, no. 9, pp. 1014–1022, 2010.
+
+[40] S. W. Roberts, "Control chart tests based on geometric moving averages," *Technometrics*, vol. 1, no. 3, pp. 239–250, 1959.
+
+[41] X. Li, F. Bian, M. Crovella, C. Diot, R. Govindan, G. Iannaccone, and A. Lakhina, "Detection and identification of network anomalies using sketch subspaces," in *Proc. ACM IMC*, 2006, pp. 147–152.
+
+[42] S. Ramaswamy, R. Rastogi, and K. Shim, "Efficient algorithms for mining outliers from large data sets," in *Proc. ACM SIGMOD*, 2000, pp. 427–438.
+
+[43] P. Casas, J. Mazel, and P. Owezarski, "Unsupervised network intrusion detection systems: Detecting the unknown without knowledge," *Computer Communications*, vol. 35, no. 7, pp. 772–783, 2012.
+
+[44] C. Gormley and Z. Tong, *Elasticsearch: The Definitive Guide*, O'Reilly Media, 2015.
+
+[45] Elastic, "Elasticsearch Reference," https://www.elastic.co/guide/en/elasticsearch/reference/current/.
+
+[46] Elastic, "Logstash Reference," https://www.elastic.co/guide/en/logstash/current/.
+
+[47] Elastic, "Kibana Guide," https://www.elastic.co/guide/en/kibana/current/.
+
+[48] D. Gonzalez, T. Hayajneh, and M. Carpenter, "ELK-based security analytics for anomaly detection in IoT environments," *IEEE Access*, vol. 9, pp. 159467–159481, 2021.
+
+[49] A. Chuvakin, K. Schmidt, and C. Phillips, *Logging and Log Management: The Authoritative Guide to Understanding the Concepts Surrounding Logging and Log Management*, Syngress, 2012.
+
+[50] Elastic, "Machine Learning in the Elastic Stack," https://www.elastic.co/what-is/elasticsearch-machine-learning.
+
+[51] M. Najafabadi, T. Khoshgoftaar, C. Calvert, and C. Kemp, "Detection of SSH brute force attacks using aggregated netflow data," in *Proc. IEEE 14th International Conference on Machine Learning and Applications*, 2015, pp. 283–288.
+
+[52] R. Hofstede, A. Pras, and A. Sperotto, "Flow-based SSH compromise detection," in *Proc. IFIP/IEEE International Symposium on Integrated Network Management*, 2018.
+
+[53] P. Kumari and R. Jain, "Isolation Forest based anomaly detection for IoT systems," *Journal of King Saud University – Computer and Information Sciences*, vol. 34, no. 8, pp. 5765–5774, 2022.
+
+[54] N. Moustafa and J. Slay, "The evaluation of Network Anomaly Detection Systems: Statistical analysis of the UNSW-NB15 data set and the comparison with the KDD99 data set," *Information Security Journal: A Global Perspective*, vol. 25, no. 1–3, pp. 18–31, 2016.
+
+[55] O. Starov, Y. Gill, P. Hartlieb, and P. Hartlieb, "Detecting SSH brute-force attacks using temporal behavioral analysis," in *Proc. IEEE Conference on Communications and Network Security*, 2019.
+
+[56] S. Ahmad, A. Lavin, S. Purdy, and Z. Agha, "Unsupervised real-time anomaly detection for streaming data," *Neurocomputing*, vol. 262, pp. 134–147, 2017.
+
+[57] A. Sperotto, R. Sadre, F. van Vliet, and A. Pras, "A labeled data set for flow-based intrusion detection," in *Proc. IEEE International Workshop on IP Operations and Management*, 2009, pp. 39–50.
+
+[58] A. Satoh, Y. Nakamura, and T. Ikenaga, "SSH dictionary attack detection using deep learning," *IEEE Access*, vol. 10, pp. 23456–23467, 2022.
+
+[59] V. T. Nguyen and M. Q. Tran, "Ứng dụng học máy trong phát hiện xâm nhập mạng," *Tạp chí Khoa học và Công nghệ — Đại học Đà Nẵng*, vol. 19, no. 5, pp. 45–52, 2021.
+
+[60] H. V. Le và cộng sự, "Xây dựng hệ thống giám sát an ninh mạng sử dụng ELK Stack cho doanh nghiệp vừa và nhỏ," *Tạp chí Công nghệ Thông tin và Truyền thông*, vol. 2022, no. 3, pp. 78–85, 2022.
+
+[61] N. H. Pham, "Nghiên cứu giải pháp phòng chống tấn công brute-force SSH cho hệ thống thông tin cơ quan nhà nước," *Luận văn Thạc sĩ, Học viện Kỹ thuật Mật mã*, 2020.
+
+[62] D. K. Tran and T. T. H. Nguyen, "Ứng dụng Isolation Forest trong phát hiện bất thường trên dữ liệu log hệ thống," *Tạp chí Nghiên cứu Khoa học và Phát triển*, vol. 2, no. 4, pp. 112–121, 2023.
+
+[63] R. Sommer and V. Paxson, "Outside the closed world: On using machine learning for network intrusion detection," in *Proc. IEEE Symposium on Security and Privacy*, 2010, pp. 305–316.
+
+<!-- 
+Tổng hợp gợi ý hình ảnh và bảng biểu cho Chương 2:
+- Hình 2.1: Sơ đồ kiến trúc phân tầng của giao thức SSH-2
+- Hình 2.2: Minh họa ngưỡng tĩnh vs. ngưỡng động (EWMA, Adaptive Percentile, kết hợp)
+- Hình 2.3: Kiến trúc tích hợp ELK Stack với mô hình AI cho giám sát SSH
+- Hình 2.4: Sơ đồ Venn thể hiện vị trí nghiên cứu tại giao điểm ba lĩnh vực
+- Bảng 2.1: So sánh đặc điểm các biến thể tấn công brute-force SSH
+- Bảng 2.2: So sánh ưu nhược điểm của các phương pháp phát hiện truyền thống
+- Bảng 2.3: So sánh đặc điểm của Isolation Forest, LOF và One-Class SVM
+- Bảng 2.4: Bảng so sánh tổng hợp các công trình nghiên cứu liên quan
+-->

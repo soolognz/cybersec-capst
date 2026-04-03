@@ -81,6 +81,8 @@ class RealtimePipeline:
         window_minutes: int = 5,
         on_alert: Optional[Callable] = None,
         on_warning: Optional[Callable] = None,
+        alert_manager=None,
+        fail2ban=None,
     ):
         """
         Args:
@@ -108,6 +110,10 @@ class RealtimePipeline:
         # Callbacks
         self.on_alert = on_alert
         self.on_warning = on_warning
+
+        # Integration components
+        self.alert_manager = alert_manager
+        self.fail2ban = fail2ban
 
         # State
         self._running = False
@@ -223,12 +229,31 @@ class RealtimePipeline:
             logger.warning(f"ALERT: IP {ip} score={score:.4f} ewma={decision.ewma_score:.4f}")
             if self.on_alert:
                 await self._call_handler(self.on_alert, ip, score, decision)
+            # Send alert and trigger Fail2Ban ban
+            if self.alert_manager:
+                alert = self.alert_manager.create_alert(
+                    source_ip=ip, threat_level='critical',
+                    anomaly_score=score, ewma_score=decision.ewma_score,
+                )
+                await self.alert_manager.send_alert(alert)
+            if self.fail2ban:
+                action = await self.fail2ban.handle_alert(ip, 'critical', score)
+                logger.info(f"Fail2Ban action: {action}")
 
         elif decision.threat_level == ThreatLevel.EARLY_WARNING:
             self._stats['warnings'] += 1
             logger.info(f"WARNING: IP {ip} score={score:.4f} ewma={decision.ewma_score:.4f}")
             if self.on_warning:
                 await self._call_handler(self.on_warning, ip, score, decision)
+            # Send warning alert, add to watchlist
+            if self.alert_manager:
+                alert = self.alert_manager.create_alert(
+                    source_ip=ip, threat_level='warning',
+                    anomaly_score=score, ewma_score=decision.ewma_score,
+                )
+                await self.alert_manager.send_alert(alert)
+            if self.fail2ban:
+                await self.fail2ban.handle_alert(ip, 'warning', score)
 
     async def _call_handler(self, handler, ip, score, decision):
         """Call alert/warning handler (sync or async)."""

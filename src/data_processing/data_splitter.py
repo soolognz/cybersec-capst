@@ -76,8 +76,9 @@ class DataSplitter:
 
         n_test_normal = len(all_test_normal_features)
 
-        # Sample attack data to achieve 1:3 ratio
-        n_attack_target = int(n_test_normal * 3)
+        # Sample attack data to achieve desired normal:attack ratio
+        attack_multiplier = int(round(1.0 / self.target_ratio))
+        n_attack_target = int(n_test_normal * attack_multiplier)
 
         if len(hp_attack_features) >= n_attack_target:
             # Randomly sample attack data

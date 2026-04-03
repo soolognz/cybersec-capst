@@ -183,9 +183,10 @@ class FeatureExtractor:
             std_inter = np.std(intervals) if len(intervals) > 1 else 0.0
             min_inter = np.min(intervals)
         else:
-            mean_inter = 300.0  # Default to window size (5 min) if single event
+            default_interval = self.window_size.total_seconds()
+            mean_inter = default_interval
             std_inter = 0.0
-            min_inter = 300.0
+            min_inter = default_interval
 
         # 11. unique_ports
         ports = set()

@@ -163,6 +163,10 @@ class DynamicThreshold:
         self._decision_history.append(decision)
         self._total_decisions += 1
 
+        # Step 7: Periodic self-calibration
+        if self._total_decisions % 100 == 0:
+            self.calibrate()
+
         return decision
 
     def _is_in_cooldown(self, source_ip: str, timestamp: Optional[datetime]) -> bool:

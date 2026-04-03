@@ -1,0 +1,665 @@
+% Chapter 3
+% Auto-generated from chapter3_methodology.md
+
+\chapter{PHƯƠNG PHÁP NGHIÊN CỨU}
+
+\section{Kiến trúc tổng thể hệ thống}
+
+Hệ thống phát hiện và phòng chống tấn công brute-force trên SSH được thiết kế theo kiến trúc microservices, triển khai trên nền tảng Docker với tổng cộng 9 dịch vụ (services) hoạt động phối hợp. Kiến trúc này đảm bảo tính mở rộng (scalability), khả năng bảo trì (maintainability), và khả năng triển khai linh hoạt trong môi trường thực tế.
+
+\textbf{Hình 3.1: Kiến trúc tổng thể hệ thống phát hiện tấn công brute-force SSH}
+
+Các thành phần chính của hệ thống bao gồm:
+
+\textbf{Tầng thu thập dữ liệu (Data Collection Layer):} Tầng này chịu trách nhiệm thu thập log xác thực từ các máy chủ SSH thông qua cơ chế theo dõi file log (log tailing) và chuyển tiếp sự kiện (event forwarding). Dữ liệu log được chuẩn hóa và đẩy vào hệ thống ELK Stack (Elasticsearch, Logstash, Kibana) để lưu trữ và lập chỉ mục.
+
+\textbf{Tầng xử lý và phân tích (Processing & Analysis Layer):} Tầng trung tâm của hệ thống, bao gồm module tiền xử lý dữ liệu (data preprocessing), module trích xuất đặc trưng (feature extraction), và module suy luận mô hình AI (model inference). Các module này được xây dựng dưới dạng API thông qua framework FastAPI, cho phép xử lý yêu cầu theo thời gian thực với hiệu năng cao.
+
+\textbf{Tầng ra quyết định (Decision Layer):} Tầng này triển khai thuật toán ngưỡng động (dynamic threshold) dựa trên phương pháp EWMA-Adaptive Percentile, kết hợp với điểm bất thường (anomaly score) từ các mô hình AI để đưa ra quyết định phân loại: bình thường (normal) hoặc tấn công (attack).
+
+\textbf{Tầng phòng chống (Response Layer):} Tích hợp Fail2Ban để tự động thực hiện các biện pháp phòng chống khi phát hiện tấn công, bao gồm chặn địa chỉ IP (IP banning), gửi cảnh báo qua email hoặc webhook, và ghi nhận sự kiện vào hệ thống giám sát.
+
+\textbf{Tầng giao diện (Presentation Layer):} Giao diện web được phát triển bằng React, cung cấp dashboard giám sát thời gian thực, hiển thị trực quan các sự kiện phát hiện, thống kê tấn công, và cho phép quản trị viên cấu hình các tham số hệ thống.
+
+\textbf{Bảng 3.1: Danh sách 9 dịch vụ Docker trong hệ thống}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llll}
+\toprule
+\textbf{STT} & \textbf{Dịch vụ} & \textbf{Công nghệ} & \textbf{Chức năng} \\
+\midrule
+1 & API Server & FastAPI (Python) & Xử lý logic nghiệp vụ, suy luận mô hình \\
+2 & Frontend & React & Giao diện giám sát và quản trị \\
+3 & Elasticsearch & ELK Stack & Lưu trữ và lập chỉ mục log \\
+4 & Logstash & ELK Stack & Thu thập và chuẩn hóa log \\
+5 & Kibana & ELK Stack & Trực quan hóa dữ liệu log \\
+6 & Fail2Ban & Fail2Ban & Tự động chặn IP tấn công \\
+7 & Redis & Redis & Cache và message queue \\
+8 & Database & PostgreSQL & Lưu trữ cấu hình và kết quả \\
+9 & Nginx & Nginx & Reverse proxy và load balancing \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Luồng xử lý dữ liệu (data pipeline) của hệ thống được mô tả như sau: (1) Log xác thực SSH từ máy chủ được thu thập bởi Logstash; (2) Logstash phân tích cú pháp (parse) và chuyển tiếp log đã chuẩn hóa tới Elasticsearch; (3) API Server định kỳ truy vấn Elasticsearch hoặc nhận sự kiện qua webhook để lấy dữ liệu log mới; (4) Module tiền xử lý thực hiện trích xuất đặc trưng theo cửa sổ thời gian (time window); (5) Mô hình AI tính toán điểm bất thường; (6) Thuật toán ngưỡng động so sánh điểm bất thường với ngưỡng hiện tại; (7) Nếu phát hiện tấn công, hệ thống kích hoạt Fail2Ban và gửi cảnh báo; (8) Kết quả được hiển thị trên dashboard React.
+
+\textbf{Hình 3.2: Luồng xử lý dữ liệu (data flow) của hệ thống}
+
+\section{Thu thập dữ liệu}
+
+\subsection{Nguồn dữ liệu}
+
+Nghiên cứu sử dụng hai nguồn dữ liệu chính để xây dựng tập dữ liệu huấn luyện và kiểm thử:
+
+\textbf{Nguồn 1 - Dữ liệu honeypot (honeypot_auth.log):} Đây là file log xác thực được thu thập từ một máy chủ honeypot SSH đặt trên Internet công cộng. Honeypot là một hệ thống được thiết kế để thu hút và ghi nhận các hoạt động tấn công thực tế, cung cấp dữ liệu tấn công có tính đại diện cao.
+
+egin{itemize}
+\item \textbf{Số dòng log:} 119.729 dòng
+\item \textbf{Thời gian thu thập:} 5 ngày liên tục
+\item \textbf{Số địa chỉ IP duy nhất:} 679 IP
+\item \textbf{Số lần thất bại xác thực (Failed password):} 29.301 lần
+\item \textbf{Số lần đăng nhập root thành công (Accepted root):} 532 lần từ 6 địa chỉ IP quản trị
+\item \textbf{Hostname:} "mail"
+
+\end{itemize}
+Máy chủ honeypot được cấu hình với dịch vụ SSH mở trên cổng mặc định (port 22), sử dụng hostname "mail" để mô phỏng một máy chủ email thực tế, nhằm thu hút nhiều cuộc tấn công brute-force hơn. Trong quá trình hoạt động, chỉ có 6 địa chỉ IP quản trị (admin IPs) được xác nhận là hợp lệ, tất cả các kết nối khác đều được phân loại là hoạt động tấn công.
+
+\textbf{Nguồn 2 - Dữ liệu mô phỏng (simulation_auth.log):} Đây là file log xác thực được tạo ra từ một môi trường mô phỏng có kiểm soát, đại diện cho hoạt động SSH bình thường hằng ngày trong một tổ chức.
+
+egin{itemize}
+\item \textbf{Số dòng log:} 54.521 dòng
+\item \textbf{Số người dùng:} 64 tài khoản
+\item \textbf{Số lần đăng nhập thành công (Accepted):} 4.205 lần
+\item \textbf{Số lần thất bại xác thực (Failed):} 177 lần
+\item \textbf{Hostname:} "if"
+
+\end{itemize}
+Dữ liệu mô phỏng được thiết kế để phản ánh các mẫu hành vi (behavioral patterns) của người dùng hợp pháp, bao gồm: đăng nhập theo giờ hành chính, đăng nhập từ nhiều thiết bị, nhập sai mật khẩu do vô tình, và các phiên làm việc với thời lượng khác nhau.
+
+\textbf{Bảng 3.2: Tổng hợp thông tin hai nguồn dữ liệu}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{Thuộc tính} & \textbf{honeypot_auth.log} & \textbf{simulation_auth.log} \\
+\midrule
+Số dòng log & 119.729 & 54.521 \\
+Thời gian thu thập & 5 ngày & Liên tục \\
+Số IP duy nhất & 679 & - \\
+Số người dùng & - & 64 \\
+Đăng nhập thành công & 532 (root) & 4.205 \\
+Đăng nhập thất bại & 29.301 & 177 \\
+Hostname & "mail" & "if" \\
+Bản chất dữ liệu & Chủ yếu tấn công & Toàn bộ bình thường \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Định dạng dữ liệu log}
+
+Dữ liệu log SSH tuân theo định dạng chuẩn syslog của hệ điều hành Linux, được ghi trong file \texttt{/var/log/auth.log}. Mỗi dòng log chứa các thông tin: dấu thời gian (timestamp), hostname, tên dịch vụ (service name), PID tiến trình, và nội dung thông báo (message). Các loại sự kiện chính bao gồm:
+
+egin{itemize}
+\item \textbf{Failed password:} Xác thực bằng mật khẩu thất bại, chứa thông tin tên người dùng, địa chỉ IP nguồn, và cổng kết nối.
+\item \textbf{Accepted password / Accepted publickey:} Xác thực thành công, chứa thông tin tương tự.
+\item \textbf{Invalid user:} Tên người dùng không tồn tại trên hệ thống.
+\item \textbf{Connection closed / Connection reset:} Kết nối bị đóng hoặc reset.
+\item \textbf{PAM authentication failure:} Xác thực PAM (Pluggable Authentication Module) thất bại.
+\item \textbf{maximum authentication attempts exceeded:} Vượt quá số lần thử xác thực tối đa cho phép.
+
+\end{itemize}
+\section{Tiền xử lý và gán nhãn dữ liệu}
+
+\subsection{Phân tích cú pháp log (Log Parsing)}
+
+Bước đầu tiên trong quá trình tiền xử lý là phân tích cú pháp (parsing) các dòng log thô để trích xuất các trường thông tin có cấu trúc. Nghiên cứu sử dụng các biểu thức chính quy (regular expressions) được thiết kế riêng cho từng loại sự kiện SSH.
+
+Quá trình parsing bao gồm các bước:
+
+egin{itemize}
+\item \textbf{Trích xuất dấu thời gian:} Chuyển đổi chuỗi thời gian từ định dạng syslog (ví dụ: "Jan  5 14:23:01") sang đối tượng datetime chuẩn, bao gồm cả việc suy luận năm từ ngữ cảnh.
+\item \textbf{Xác định loại sự kiện:} Phân loại mỗi dòng log thành một trong các loại sự kiện đã định nghĩa (failed password, accepted password, invalid user, v.v.) dựa trên từ khóa và mẫu chuỗi.
+\item \textbf{Trích xuất thông tin:} Lấy ra các trường dữ liệu cụ thể cho từng loại sự kiện: tên người dùng (username), địa chỉ IP nguồn (source IP), cổng kết nối (port), phương thức xác thực (authentication method).
+\item \textbf{Xử lý ngoại lệ:} Các dòng log không khớp với mẫu đã định nghĩa hoặc bị lỗi định dạng được ghi nhận và loại bỏ khỏi tập dữ liệu.
+
+\end{itemize}
+\subsection{Chiến lược gán nhãn (Labeling Strategy)}
+
+Do đặc thù của bài toán phát hiện bất thường bán giám sát (semi-supervised anomaly detection), chiến lược gán nhãn được thiết kế cẩn thận để đảm bảo tính chính xác và phù hợp với phương pháp huấn luyện:
+
+\textbf{Đối với dữ liệu mô phỏng (simulation_auth.log):} Toàn bộ dữ liệu được gán nhãn \textbf{normal} (bình thường). Lý do: môi trường mô phỏng được kiểm soát hoàn toàn, tất cả các hoạt động đều do người dùng hợp pháp thực hiện, bao gồm cả các trường hợp nhập sai mật khẩu do vô tình. Điều này phản ánh đúng thực tế rằng việc nhập sai mật khẩu một vài lần là hành vi bình thường của người dùng.
+
+\textbf{Đối với dữ liệu honeypot (honeypot_auth.log):} Chiến lược gán nhãn dựa trên danh sách 6 địa chỉ IP quản trị (admin IPs) đã được xác minh:
+
+egin{itemize}
+\item Các sự kiện đăng nhập root thành công (Accepted root) từ 6 địa chỉ IP quản trị được gán nhãn \textbf{normal}.
+\item Tất cả các sự kiện còn lại (bao gồm failed password, invalid user, accepted login từ IP không xác định, v.v.) được gán nhãn \textbf{attack} (tấn công).
+
+\end{itemize}
+Chiến lược này đảm bảo:
+egin{itemize}
+\item \textbf{Tính thuần khiết của dữ liệu huấn luyện:} Chỉ dữ liệu normal thuần (pure normal data) được sử dụng để huấn luyện các mô hình phát hiện bất thường.
+\item \textbf{Tính thực tế:} Dữ liệu tấn công phản ánh các mẫu tấn công brute-force thực tế từ Internet.
+\item \textbf{Tỷ lệ mất cân bằng:} Tập kiểm thử có tỷ lệ normal:attack xấp xỉ 1:3, phản ánh tỷ lệ tấn công cao trên các máy chủ SSH công cộng.
+
+\end{itemize}
+\subsection{Phân chia dữ liệu (Data Splitting)}
+
+Dữ liệu được phân chia theo nguyên tắc của học bán giám sát:
+
+\textbf{Tập huấn luyện (Training Set):}
+egin{itemize}
+\item Kích thước: \textbf{7.212 mẫu}
+\item Thành phần: \textbf{100% normal} (toàn bộ mẫu bình thường)
+\item Nguồn: 70\% dữ liệu từ simulation\_auth.log
+\item Mục đích: Huấn luyện mô hình học đặc trưng của hành vi bình thường
+
+\end{itemize}
+\textbf{Tập kiểm thử (Test Set):}
+egin{itemize}
+\item Kích thước: \textbf{15.184 mẫu}
+\item Thành phần: 3.796 mẫu normal + 11.388 mẫu attack
+\item Tỷ lệ normal:attack = \textbf{1:3}
+\item Nguồn: 30\% dữ liệu còn lại từ simulation\_auth.log (normal) + dữ liệu từ honeypot\_auth.log (attack và normal từ admin IPs)
+
+\end{itemize}
+\textbf{Bảng 3.3: Phân chia tập dữ liệu}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lllll}
+\toprule
+\textbf{Tập dữ liệu} & \textbf{Số mẫu} & \textbf{Normal} & \textbf{Attack} & \textbf{Tỷ lệ} \\
+\midrule
+Training & 7.212 & 7.212 (100%) & 0 (0%) & - \\
+Test & 15.184 & 3.796 (25%) & 11.388 (75%) & 1:3 \\
+Tổng & 22.396 & 11.008 & 11.388 & - \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Việc phân chia này tuân theo phương pháp luận chuẩn cho bài toán phát hiện bất thường bán giám sát: mô hình chỉ được huấn luyện trên dữ liệu bình thường, sau đó được đánh giá trên tập kiểm thử chứa cả dữ liệu bình thường lẫn bất thường.
+
+\section{Trích xuất đặc trưng}
+
+\subsection{Cửa sổ thời gian (Time Window)}
+
+Đặc trưng được trích xuất theo phương pháp cửa sổ trượt (sliding window) với các tham số:
+
+egin{itemize}
+\item \textbf{Kích thước cửa sổ (window size):} 5 phút
+\item \textbf{Bước trượt (stride):} 1 phút
+\item \textbf{Đơn vị tổng hợp:} Theo địa chỉ IP nguồn
+
+\end{itemize}
+Mỗi cửa sổ thời gian 5 phút cho mỗi địa chỉ IP tạo ra một vector đặc trưng (feature vector) gồm 14 chiều. Kích thước cửa sổ 5 phút được lựa chọn dựa trên các quan sát:
+
+egin{itemize}
+\item Đủ ngắn để phát hiện sớm các cuộc tấn công brute-force nhanh (rapid brute-force).
+\item Đủ dài để thu thập đủ thông tin thống kê có ý nghĩa cho các mẫu hành vi.
+\item Bước trượt 1 phút đảm bảo độ phân giải thời gian (temporal resolution) cao, cho phép phát hiện tấn công với độ trễ tối đa 1 phút.
+
+\end{itemize}
+\textbf{Hình 3.3: Minh họa phương pháp cửa sổ trượt với window=5 phút, stride=1 phút}
+
+\subsection{Mô tả 14 đặc trưng}
+
+Nghiên cứu thiết kế 14 đặc trưng (features) phản ánh các khía cạnh khác nhau của hành vi xác thực SSH trong mỗi cửa sổ thời gian. Các đặc trưng được phân thành 5 nhóm chức năng:
+
+\textbf{Nhóm 1: Đặc trưng đếm và tỷ lệ xác thực (Authentication Count & Rate Features)}
+
+\textbf{1. fail_count (Số lần xác thực thất bại):}
+Tổng số lần xác thực thất bại (failed password) từ một địa chỉ IP trong cửa sổ thời gian. Đây là đặc trưng cơ bản nhất và trực tiếp nhất để nhận diện tấn công brute-force, vì kẻ tấn công thường tạo ra số lượng lớn các lần thử mật khẩu sai.
+
+\textbf{2. success_count (Số lần xác thực thành công):}
+Tổng số lần xác thực thành công (accepted password/publickey) từ một địa chỉ IP. Người dùng hợp pháp thường có tỷ lệ đăng nhập thành công cao, trong khi kẻ tấn công brute-force hiếm khi thành công.
+
+\textbf{3. fail_rate (Tỷ lệ thất bại):}
+Tỷ lệ giữa số lần thất bại và tổng số lần thử xác thực, được tính theo công thức:
+
+\[fail\_rate = \frac{fail\_count}{fail\_count + success\_count}\]
+
+Giá trị fail\_rate gần 1.0 cho thấy hầu hết các lần thử đều thất bại, đặc trưng của tấn công brute-force. Người dùng bình thường thường có fail\_rate thấp (dưới 0.3).
+
+\textbf{Nhóm 2: Đặc trưng liên quan đến tên người dùng (Username-related Features)}
+
+\textbf{4. unique_usernames (Số tên người dùng duy nhất):}
+Số lượng tên người dùng khác nhau được sử dụng trong các lần thử xác thực. Tấn công brute-force dạng credential stuffing hoặc dictionary attack thường thử nhiều tên người dùng khác nhau (root, admin, test, oracle, v.v.), trong khi người dùng hợp pháp chỉ sử dụng 1-2 tài khoản.
+
+\textbf{5. invalid_user_count (Số lần sử dụng tên người dùng không hợp lệ):}
+Tổng số lần thử đăng nhập với tên người dùng không tồn tại trên hệ thống (invalid user). Đây là dấu hiệu rõ ràng của tấn công, vì người dùng hợp pháp biết chính xác tên tài khoản của mình.
+
+\textbf{6. invalid_user_ratio (Tỷ lệ người dùng không hợp lệ):}
+Tỷ lệ giữa số lần sử dụng tên người dùng không hợp lệ và tổng số lần thử xác thực:
+
+\[invalid\_user\_ratio = \frac{invalid\_user\_count}{fail\_count + success\_count}\]
+
+Tỷ lệ cao cho thấy kẻ tấn công đang quét (scan) hệ thống với danh sách tên người dùng ngẫu nhiên hoặc phổ biến.
+
+\textbf{Nhóm 3: Đặc trưng kết nối và thời gian (Connection & Temporal Features)}
+
+\textbf{7. connection_count (Số lượng kết nối):}
+Tổng số kết nối SSH (bao gồm cả thành công và thất bại) từ một địa chỉ IP. Đặc trưng này phản ánh mức độ hoạt động (activity level) tổng thể của IP. Tấn công brute-force tự động thường tạo ra số lượng kết nối rất lớn trong thời gian ngắn.
+
+\textbf{8. mean_inter_attempt_time (Thời gian trung bình giữa các lần thử):}
+Giá trị trung bình (mean) của khoảng thời gian giữa hai lần thử xác thực liên tiếp, tính bằng giây. Công thức:
+
+\[mean\_inter\_attempt\_time = \frac{1}{n-1} \sum_{i=1}^{n-1} (t_{i+1} - t_i)\]
+
+trong đó $t\_i$ là thời điểm của lần thử xác thực thứ $i$, $n$ là tổng số lần thử. Công cụ tấn công tự động thường có khoảng thời gian giữa các lần thử rất ngắn và đều đặn (thường dưới 1 giây), trong khi người dùng thủ công có khoảng thời gian dài hơn và biến thiên hơn.
+
+\textbf{9. std_inter_attempt_time (Độ lệch chuẩn thời gian giữa các lần thử):}
+Độ lệch chuẩn (standard deviation) của khoảng thời gian giữa các lần thử. Giá trị thấp cho thấy mẫu hành vi đều đặn, đặc trưng của công cụ tự động. Giá trị cao cho thấy mẫu hành vi không đều, có thể là người dùng thủ công.
+
+\textbf{10. min_inter_attempt_time (Thời gian tối thiểu giữa các lần thử):}
+Giá trị nhỏ nhất của khoảng thời gian giữa hai lần thử liên tiếp. Giá trị rất nhỏ (gần 0) cho thấy có ít nhất một cặp lần thử xảy ra gần như đồng thời, dấu hiệu đặc trưng của tấn công tự động.
+
+\textbf{Nhóm 4: Đặc trưng mạng và phiên làm việc (Network & Session Features)}
+
+\textbf{11. unique_ports (Số cổng nguồn duy nhất):}
+Số lượng cổng nguồn (source port) khác nhau được sử dụng trong các kết nối từ một địa chỉ IP. Mỗi kết nối TCP mới thường sử dụng một cổng nguồn ngẫu nhiên khác. Số lượng cổng duy nhất lớn tương quan với số lượng kết nối riêng biệt, phản ánh mức độ hoạt động của IP.
+
+\textbf{12. session_duration_mean (Thời lượng phiên trung bình):}
+Giá trị trung bình của thời lượng các phiên SSH (session duration), tính bằng giây. Người dùng hợp pháp thường có phiên làm việc kéo dài (vài phút đến vài giờ), trong khi tấn công brute-force tạo ra các phiên rất ngắn (dưới vài giây) vì mỗi lần thử mật khẩu sai đều bị ngắt kết nối nhanh chóng.
+
+\textbf{Nhóm 5: Đặc trưng chỉ thị tấn công (Attack Indicator Features)}
+
+\textbf{13. pam_failure_escalation (Leo thang lỗi PAM):}
+Biến nhị phân (0 hoặc 1) cho biết trong cửa sổ thời gian có xuất hiện chuỗi lỗi PAM liên tục gia tăng hay không. Giá trị 1 cho thấy có hiện tượng tăng dần số lần thất bại PAM, đặc trưng của tấn công brute-force có hệ thống.
+
+\textbf{14. max_retries_exceeded (Vượt quá số lần thử tối đa):}
+Biến nhị phân cho biết trong cửa sổ thời gian có sự kiện "maximum authentication attempts exceeded" hay không. Đây là dấu hiệu trực tiếp của tấn công brute-force, khi kẻ tấn công cố gắng nhiều lần thử mật khẩu trong cùng một phiên kết nối cho đến khi bị máy chủ SSH ngắt kết nối.
+
+\textbf{Bảng 3.4: Tổng hợp 14 đặc trưng và ý nghĩa}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llll}
+\toprule
+\textbf{STT} & \textbf{Đặc trưng} & \textbf{Kiểu dữ liệu} & \textbf{Ý nghĩa phát hiện} \\
+\midrule
+1 & fail_count & Số nguyên & Số lần thử sai mật khẩu \\
+2 & success_count & Số nguyên & Số lần đăng nhập thành công \\
+3 & fail_rate & Thực [0,1] & Tỷ lệ thất bại/tổng thử \\
+4 & unique_usernames & Số nguyên & Đa dạng tên người dùng \\
+5 & invalid_user_count & Số nguyên & Tên người dùng không tồn tại \\
+6 & invalid_user_ratio & Thực [0,1] & Tỷ lệ tên không hợp lệ \\
+7 & connection_count & Số nguyên & Tổng số kết nối SSH \\
+8 & mean_inter_attempt_time & Thực (giây) & Tốc độ trung bình giữa các lần thử \\
+9 & std_inter_attempt_time & Thực (giây) & Biến thiên tốc độ thử \\
+10 & min_inter_attempt_time & Thực (giây) & Tốc độ nhanh nhất giữa các lần thử \\
+11 & unique_ports & Số nguyên & Đa dạng cổng nguồn \\
+12 & pam_failure_escalation & Nhị phân {0,1} & Chuỗi lỗi PAM gia tăng \\
+13 & max_retries_exceeded & Nhị phân {0,1} & Vượt giới hạn thử lại \\
+14 & session_duration_mean & Thực (giây) & Thời lượng phiên trung bình \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Chuẩn hóa đặc trưng}
+
+Sau khi trích xuất, các đặc trưng được chuẩn hóa bằng phương pháp \textbf{RobustScaler} từ thư viện scikit-learn. RobustScaler được lựa chọn thay vì StandardScaler hoặc MinMaxScaler vì các lý do:
+
+egin{itemize}
+\item \textbf{Kháng nhiễu (Robust to outliers):} RobustScaler sử dụng trung vị (median) và khoảng tứ phân vị (interquartile range - IQR) thay vì trung bình (mean) và độ lệch chuẩn (standard deviation), giúp giảm ảnh hưởng của các giá trị ngoại lai (outliers) trong dữ liệu.
+
+\item \textbf{Phù hợp với dữ liệu tấn công:} Dữ liệu tấn công brute-force thường chứa nhiều giá trị cực trị (extreme values), ví dụ: fail_count có thể lên tới hàng nghìn trong khi giá trị bình thường chỉ 0-2. RobustScaler không bị ảnh hưởng bởi các giá trị cực trị này.
+
+\end{itemize}
+Công thức chuẩn hóa của RobustScaler:
+
+\[x_{scaled} = \frac{x - Q_2(x)}{Q_3(x) - Q_1(x)}\]
+
+trong đó $Q\_1$, $Q\_2$, $Q\_3$ lần lượt là phân vị thứ 25\%, 50\% (trung vị), và 75\% của đặc trưng $x$.
+
+Scaler được fit trên tập huấn luyện (chỉ chứa dữ liệu normal) và áp dụng transform cho cả tập huấn luyện và tập kiểm thử, đảm bảo không có rò rỉ dữ liệu (data leakage).
+
+\section{Lựa chọn mô hình}
+
+\subsection{Phương pháp tiếp cận: Phát hiện bất thường bán giám sát}
+
+Nghiên cứu áp dụng phương pháp phát hiện bất thường bán giám sát (semi-supervised anomaly detection), trong đó mô hình chỉ được huấn luyện trên dữ liệu bình thường (normal data) và sau đó xác định các mẫu lệch khỏi phân phối bình thường là bất thường (anomaly). Phương pháp này được lựa chọn vì:
+
+egin{itemize}
+\item \textbf{Tính thực tế:} Trong thực tế, dữ liệu bình thường dễ thu thập hơn nhiều so với dữ liệu tấn công có nhãn. Các tổ chức có thể dễ dàng thu thập log hoạt động bình thường nhưng khó có đủ mẫu cho mọi loại tấn công.
+
+\item \textbf{Khả năng phát hiện tấn công mới:} Mô hình bán giám sát có khả năng phát hiện các loại tấn công chưa từng thấy (zero-day attacks), miễn là hành vi tấn công lệch khỏi mẫu bình thường đã học.
+
+\item \textbf{Tránh mất cân bằng dữ liệu:} Phương pháp giám sát (supervised) thường gặp vấn đề mất cân bằng lớp (class imbalance) khi tỷ lệ tấn công thấp. Phương pháp bán giám sát không bị ảnh hưởng bởi vấn đề này.
+
+\end{itemize}
+\subsection{Ba mô hình được lựa chọn}
+
+Nghiên cứu lựa chọn và so sánh ba mô hình phát hiện bất thường phổ biến nhất trong lĩnh vực an toàn thông tin:
+
+\textbf{Isolation Forest (IF):}
+Isolation Forest (Liu và cộng sự, 2008) là thuật toán dựa trên nguyên lý cô lập (isolation). Ý tưởng cốt lõi: các điểm bất thường dễ bị cô lập hơn các điểm bình thường trong cây quyết định ngẫu nhiên. Thuật toán xây dựng một tập hợp (ensemble) các cây cô lập (isolation trees), trong đó mỗi cây phân chia không gian đặc trưng bằng các siêu phẳng ngẫu nhiên. Điểm bất thường (anomaly score) tỷ lệ nghịch với chiều dài đường đi trung bình (average path length) từ gốc đến lá.
+
+Ưu điểm: hiệu quả tính toán cao (độ phức tạp O(n log n)), phù hợp với dữ liệu nhiều chiều, không yêu cầu giả định về phân phối dữ liệu.
+
+\textbf{Local Outlier Factor (LOF):}
+LOF (Breunig và cộng sự, 2000) là thuật toán dựa trên mật độ cục bộ (local density). Thuật toán so sánh mật độ cục bộ của một điểm dữ liệu với mật độ cục bộ của các điểm láng giềng gần nhất (nearest neighbors). Một điểm có mật độ thấp hơn đáng kể so với các láng giềng được coi là bất thường.
+
+Ưu điểm: phát hiện tốt các bất thường cục bộ (local anomalies), không yêu cầu giả định phân phối toàn cục.
+
+\textbf{One-Class SVM (OCSVM):}
+OCSVM (Schölkopf và cộng sự, 2001) là biến thể của Support Vector Machine cho bài toán phân loại một lớp. Thuật toán tìm siêu phẳng (hyperplane) trong không gian đặc trưng ánh xạ (kernel space) sao cho phân tách được dữ liệu huấn luyện khỏi gốc tọa độ với biên lớn nhất (maximum margin). Các điểm nằm ngoài siêu phẳng được phân loại là bất thường.
+
+Ưu điểm: mạnh mẽ về mặt lý thuyết, hiệu quả trong không gian đặc trưng cao chiều thông qua kernel trick.
+
+\textbf{Bảng 3.5: So sánh đặc điểm của ba mô hình}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llll}
+\toprule
+\textbf{Đặc điểm} & \textbf{Isolation Forest} & \textbf{LOF} & \textbf{OCSVM} \\
+\midrule
+Nguyên lý & Cô lập & Mật độ cục bộ & Siêu phẳng biên \\
+Độ phức tạp & O(n log n) & O(n²) & O(n² ~ n³) \\
+Phù hợp dữ liệu lớn & Rất tốt & Trung bình & Trung bình \\
+Phát hiện bất thường cục bộ & Trung bình & Rất tốt & Tốt \\
+Giả định phân phối & Không & Không & Không (với kernel) \\
+Khả năng diễn giải & Trung bình & Thấp & Thấp \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Phương pháp huấn luyện}
+
+\subsection{Quy trình huấn luyện bán giám sát}
+
+Quy trình huấn luyện tuân theo paradigm semi-supervised novelty detection:
+
+egin{itemize}
+\item \textbf{Bước 1 - Chuẩn bị dữ liệu huấn luyện:} Chỉ sử dụng 7.212 mẫu normal từ 70% dữ liệu simulation.
+\item \textbf{Bước 2 - Chuẩn hóa:} Fit RobustScaler trên tập huấn luyện, transform tập huấn luyện và kiểm thử.
+\item \textbf{Bước 3 - Huấn luyện mô hình:} Fit mỗi mô hình (IF, LOF, OCSVM) trên tập huấn luyện đã chuẩn hóa.
+\item \textbf{Bước 4 - Dự đoán và đánh giá:} Tính anomaly score cho mỗi mẫu trong tập kiểm thử (15.184 mẫu), áp dụng ngưỡng để phân loại, và tính các chỉ số đánh giá.
+
+\end{itemize}
+\textbf{Hình 3.4: Quy trình huấn luyện và đánh giá mô hình}
+
+\subsection{Tối ưu siêu tham số (Hyperparameter Tuning)}
+
+Siêu tham số của mỗi mô hình được tối ưu thông qua phương pháp tìm kiếm lưới (grid search) kết hợp với xác thực chéo (cross-validation) trên tập huấn luyện. Do tập huấn luyện chỉ chứa dữ liệu normal, tiêu chí tối ưu dựa trên khả năng tái tạo (reconstruction) phân phối dữ liệu normal và điểm ROC-AUC trên một tập validation nhỏ chứa một số mẫu attack.
+
+\textbf{Isolation Forest - Siêu tham số tối ưu:}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{Siêu tham số} & \textbf{Giá trị tối ưu} & \textbf{Mô tả} \\
+\midrule
+n_estimators & 300 & Số cây cô lập trong tập hợp \\
+max_samples & 512 & Số mẫu con cho mỗi cây \\
+max_features & 0.5 & Tỷ lệ đặc trưng cho mỗi cây (7/14 đặc trưng) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Việc sử dụng \texttt{max_features=0.5} giúp tăng tính đa dạng (diversity) giữa các cây trong ensemble, giảm nguy cơ overfitting. \texttt{max_samples=512} giới hạn kích thước mẫu con, giúp tăng tốc huấn luyện và cải thiện khả năng phát hiện bất thường theo lý thuyết Isolation Forest. \texttt{n_estimators=300} đảm bảo đủ số cây để ổn định anomaly score.
+
+\textbf{Local Outlier Factor - Siêu tham số tối ưu:}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{Siêu tham số} & \textbf{Giá trị tối ưu} & \textbf{Mô tả} \\
+\midrule
+n_neighbors & 30 & Số láng giềng gần nhất \\
+novelty & True & Chế độ novelty detection \\
+metric & minkowski & Hàm khoảng cách \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Giá trị \texttt{n_neighbors=30} cân bằng giữa khả năng phát hiện bất thường cục bộ (local anomaly) và tính ổn định của ước lượng mật độ. Giá trị quá nhỏ dẫn đến nhạy cảm với nhiễu, giá trị quá lớn có thể bỏ lỡ các bất thường cục bộ.
+
+\textbf{One-Class SVM - Siêu tham số tối ưu:}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{Siêu tham số} & \textbf{Giá trị tối ưu} & \textbf{Mô tả} \\
+\midrule
+kernel & rbf & Hàm nhân Gaussian \\
+gamma & auto & Hệ số kernel (1/n_features) \\
+nu & 0.01 & Biên trên tỷ lệ ngoại lai và biên dưới support vectors \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Giá trị \texttt{nu=0.01} thiết lập biên trên cho tỷ lệ ngoại lai (outlier fraction) là 1%, phù hợp với giả định rằng tập huấn luyện thuần normal và chỉ cho phép tối đa 1% mẫu bị phân loại nhầm. \texttt{gamma=auto} tự động tính gamma = 1/n_features = 1/14 ≈ 0.0714, phù hợp với số chiều đặc trưng.
+
+\section{Thiết kế thuật toán ngưỡng động}
+
+\subsection{Động cơ thiết kế}
+
+Trong các hệ thống phát hiện bất thường truyền thống, ngưỡng phân loại (classification threshold) thường được cố định (static threshold). Tuy nhiên, trong thực tế, phân phối điểm bất thường có thể thay đổi theo thời gian do:
+
+egin{itemize}
+\item Thay đổi trong mẫu lưu lượng mạng (traffic pattern shifts).
+\item Sự xuất hiện của các loại tấn công mới với đặc trưng khác nhau.
+\item Biến đổi theo thời gian trong hành vi người dùng (concept drift).
+
+\end{itemize}
+Do đó, nghiên cứu đề xuất thuật toán ngưỡng động \textbf{EWMA-Adaptive Percentile} kết hợp hai kỹ thuật: trung bình trượt có trọng số hàm mũ (Exponentially Weighted Moving Average - EWMA) và phân vị thích ứng (adaptive percentile).
+
+\subsection{Công thức toán học}
+
+\textbf{Định nghĩa các tham số:}
+
+egin{itemize}
+\item $\alpha$ = 0.3: Hệ số làm mượt EWMA (smoothing factor)
+\item $base\_percentile$ = 95: Phân vị cơ sở (base percentile)
+\item $sensitivity\_factor$ = 1.5: Hệ số nhạy cảm (sensitivity factor)
+\item $lookback$ = 100: Số điểm dữ liệu gần nhất để tính toán (lookback window)
+
+\end{itemize}
+\textbf{Bước 1: Tính EWMA của anomaly score}
+
+Cho chuỗi điểm bất thường $s\_1, s\_2, ..., s\_t$ theo thời gian, EWMA tại thời điểm $t$ được tính:
+
+\[\mu_t^{EWMA} = \alpha \cdot s_t + (1 - \alpha) \cdot \mu_{t-1}^{EWMA}\]
+
+với $\mu_0^{EWMA} = s_1$ (khởi tạo bằng giá trị đầu tiên).
+
+Hệ số $\alpha = 0.3$ đảm bảo EWMA phản ứng đủ nhanh với các thay đổi gần đây nhưng không quá nhạy cảm với nhiễu nhất thời.
+
+\textbf{Bước 2: Tính phân vị thích ứng}
+
+Sử dụng lookback window gồm $L = 100$ điểm bất thường gần nhất $\{s_{t-L+1}, ..., s_t\}$, tính phân vị thứ $p$ (percentile):
+
+\[P_t = Percentile(\{s_{t-L+1}, ..., s_t\}, p)\]
+
+trong đó $p = base\_percentile = 95$.
+
+\textbf{Bước 3: Tính ngưỡng động (dynamic threshold)}
+
+Ngưỡng động tại thời điểm $t$ được tính bằng:
+
+\[\theta_t = \mu_t^{EWMA} + sensitivity\_factor \times (P_t - \mu_t^{EWMA})\]
+
+\[\theta_t = \mu_t^{EWMA} + 1.5 \times (P_t - \mu_t^{EWMA})\]
+
+Công thức này có ý nghĩa: ngưỡng được đặt tại vị trí trung bình EWMA cộng thêm 1.5 lần khoảng cách từ EWMA đến phân vị thứ 95. Điều này đảm bảo:
+
+egin{itemize}
+\item Khi phân phối ổn định: ngưỡng nằm trên phần lớn (>95\%) các điểm bình thường.
+\item Khi xuất hiện đợt tấn công: EWMA tăng lên, kéo ngưỡng lên theo, tránh cảnh báo sai liên tục.
+\item Khi tấn công kết thúc: EWMA giảm dần, ngưỡng trở về mức bình thường.
+
+\end{itemize}
+\textbf{Bước 4: Quyết định phân loại}
+
+Một mẫu tại thời điểm $t$ được phân loại:
+
+\[\]
+y_t = \begin{cases}
+\text{attack} & \text{nếu } s_t > \theta_t \\
+\text{normal} & \text{nếu } s_t \leq \theta_t
+\end{cases}
+\[\]
+
+\textbf{Hình 3.5: Minh họa thuật toán ngưỡng động EWMA-Adaptive Percentile}
+
+\subsection{Phân tích tham số}
+
+\textbf{Bảng 3.6: Tham số thuật toán ngưỡng động và ý nghĩa}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llll}
+\toprule
+\textbf{Tham số} & \textbf{Giá trị} & \textbf{Ý nghĩa} & \textbf{Ảnh hưởng} \\
+\midrule
+alpha (α) & 0.3 & Tốc độ phản ứng EWMA & α lớn → phản ứng nhanh, nhiều nhiễu; α nhỏ → phản ứng chậm, ổn định \\
+base_percentile & 95 & Ngưỡng phân vị cơ sở & Cao → ít FP, có thể bỏ lỡ tấn công; Thấp → nhiều FP, phát hiện tốt \\
+sensitivity_factor & 1.5 & Độ nhạy cảm & Cao → ngưỡng cao, ít cảnh báo; Thấp → ngưỡng thấp, nhiều cảnh báo \\
+lookback & 100 & Số mẫu gần nhất & Lớn → ổn định, chậm thích ứng; Nhỏ → nhạy, nhanh thích ứng \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Pipeline phát hiện thời gian thực}
+
+\subsection{Kiến trúc pipeline}
+
+Pipeline phát hiện thời gian thực (real-time detection pipeline) được thiết kế để xử lý liên tục dòng sự kiện log SSH với độ trễ tối thiểu. Kiến trúc pipeline bao gồm các giai đoạn (stages):
+
+\textbf{Giai đoạn 1 - Ingestion (Thu nhận dữ liệu):}
+Logstash theo dõi (tail) file auth.log trên các máy chủ SSH, phân tích cú pháp mỗi dòng log mới, và gửi sự kiện đã cấu trúc hóa tới Elasticsearch. Đồng thời, một webhook/event stream gửi sự kiện tới API Server.
+
+\textbf{Giai đoạn 2 - Aggregation (Tổng hợp):}
+API Server duy trì bộ đệm (buffer) theo cửa sổ trượt cho mỗi địa chỉ IP đang hoạt động. Khi bước trượt 1 phút trôi qua, hệ thống tổng hợp các sự kiện trong cửa sổ 5 phút gần nhất để tính toán 14 đặc trưng.
+
+\textbf{Giai đoạn 3 - Scoring (Tính điểm):}
+Vector đặc trưng được chuẩn hóa bằng RobustScaler (đã fit trên tập huấn luyện) và đưa vào mô hình AI để tính anomaly score. Cả ba mô hình (IF, LOF, OCSVM) có thể hoạt động song song hoặc theo cấu hình ensemble.
+
+\textbf{Giai đoạn 4 - Decision (Quyết định):}
+Anomaly score được so sánh với ngưỡng động hiện tại ($\theta_t$). Đồng thời, thuật toán EWMA-Adaptive Percentile cập nhật ngưỡng dựa trên điểm mới nhận được.
+
+\textbf{Giai đoạn 5 - Action (Hành động):}
+Nếu phát hiện tấn công, hệ thống kích hoạt các hành động phòng chống (xem mục 3.9).
+
+\textbf{Hình 3.6: Pipeline phát hiện thời gian thực 5 giai đoạn}
+
+\subsection{Xử lý song song và bất đồng bộ}
+
+Để đảm bảo hiệu năng thời gian thực, pipeline sử dụng:
+
+egin{itemize}
+\item \textbf{Xử lý bất đồng bộ (Asynchronous processing):} FastAPI hỗ trợ xử lý bất đồng bộ (async/await) cho các tác vụ I/O-bound như truy vấn Elasticsearch, ghi database.
+\item \textbf{Xử lý song song (Parallel processing):} Nhiều IP có thể được xử lý đồng thời thông qua thread pool hoặc process pool cho các tác vụ CPU-bound như tính toán mô hình.
+\item \textbf{Caching:} Redis được sử dụng để cache kết quả trung gian, bao gồm: scaler parameters, model objects, và trạng thái cửa sổ trượt cho mỗi IP.
+
+\end{itemize}
+\section{Module cảnh báo và phòng chống}
+
+\subsection{Tích hợp Fail2Ban}
+
+Fail2Ban là công cụ phòng chống xâm nhập (intrusion prevention) được tích hợp vào hệ thống để tự động chặn các địa chỉ IP tấn công. Khi module phát hiện xác định một IP đang thực hiện tấn công brute-force, hệ thống gọi API Fail2Ban để:
+
+egin{itemize}
+\item \textbf{Ban IP:} Thêm địa chỉ IP vào danh sách chặn (ban list) của Fail2Ban, ngăn mọi kết nối mới từ IP đó.
+\item \textbf{Thời gian chặn:} Cấu hình thời gian chặn (ban time) linh hoạt dựa trên mức độ nghiêm trọng (severity) của cuộc tấn công.
+\item \textbf{Chặn leo thang (Progressive ban):} Nếu một IP bị phát hiện tấn công nhiều lần, thời gian chặn tăng dần theo cấp số nhân.
+
+\end{itemize}
+\subsection{Hệ thống cảnh báo đa kênh}
+
+Hệ thống cảnh báo hỗ trợ nhiều kênh thông báo:
+
+egin{itemize}
+\item \textbf{Dashboard React:} Hiển thị cảnh báo thời gian thực trên giao diện web, bao gồm thông tin IP, thời gian, anomaly score, loại tấn công dự đoán, và hành động đã thực hiện.
+\item \textbf{Webhook:} Gửi cảnh báo tới các dịch vụ bên ngoài (Slack, Telegram, v.v.) thông qua webhook HTTP.
+\item \textbf{Logging:} Ghi nhận tất cả sự kiện phát hiện và hành động phòng chống vào Elasticsearch để phục vụ phân tích hậu sự cố (post-incident analysis).
+
+\end{itemize}
+\subsection{Cơ chế phản hồi (Feedback Mechanism)}
+
+Hệ thống cho phép quản trị viên đánh dấu các cảnh báo là true positive hoặc false positive thông qua giao diện React. Thông tin phản hồi này được lưu trữ và có thể được sử dụng để tinh chỉnh mô hình hoặc điều chỉnh tham số ngưỡng động trong tương lai.
+
+\section{Các chỉ số đánh giá}
+
+\subsection{Ma trận nhầm lẫn (Confusion Matrix)}
+
+Các chỉ số đánh giá dựa trên ma trận nhầm lẫn cho bài toán phân loại nhị phân (normal vs. attack):
+
+egin{itemize}
+\item \textbf{True Positive (TP):} Mẫu tấn công được phân loại đúng là tấn công.
+\item \textbf{True Negative (TN):} Mẫu bình thường được phân loại đúng là bình thường.
+\item \textbf{False Positive (FP):} Mẫu bình thường bị phân loại nhầm là tấn công (cảnh báo sai).
+\item \textbf{False Negative (FN):} Mẫu tấn công bị phân loại nhầm là bình thường (bỏ sót tấn công).
+
+\end{itemize}
+\subsection{Các chỉ số chính}
+
+\textbf{Accuracy (Độ chính xác tổng thể):}
+
+\[Accuracy = \frac{TP + TN}{TP + TN + FP + FN}\]
+
+Đo tỷ lệ phân loại đúng trên toàn bộ tập dữ liệu. Tuy nhiên, trong bài toán mất cân bằng, accuracy có thể không phản ánh đúng hiệu năng mô hình.
+
+\textbf{Precision (Độ chính xác dương tính):}
+
+\[Precision = \frac{TP}{TP + FP}\]
+
+Đo tỷ lệ dự đoán tấn công thực sự là tấn công trong tổng số dự đoán tấn công. Precision cao nghĩa là ít cảnh báo sai.
+
+\textbf{Recall / Sensitivity (Độ nhạy / Độ phủ):}
+
+\[Recall = \frac{TP}{TP + FN}\]
+
+Đo tỷ lệ tấn công thực sự được phát hiện trong tổng số tấn công thực tế. Recall cao nghĩa là ít bỏ sót tấn công. Trong lĩnh vực an toàn thông tin, recall đặc biệt quan trọng vì việc bỏ sót một cuộc tấn công có thể gây hậu quả nghiêm trọng.
+
+\textbf{F1-Score:}
+
+\[F1 = 2 \times \frac{Precision \times Recall}{Precision + Recall}\]
+
+Trung bình điều hòa của Precision và Recall, cung cấp một chỉ số cân bằng giữa hai yếu tố.
+
+\textbf{ROC-AUC (Area Under the Receiver Operating Characteristic Curve):}
+
+\[ROC\text{-}AUC = \int_0^1 TPR(FPR^{-1}(x)) \, dx\]
+
+Diện tích dưới đường cong ROC, đo khả năng phân biệt giữa lớp normal và attack trên toàn bộ các ngưỡng phân loại. ROC-AUC = 1.0 là lý tưởng (phân biệt hoàn hảo), ROC-AUC = 0.5 tương đương phân loại ngẫu nhiên.
+
+\textbf{Bảng 3.7: Tổng hợp các chỉ số đánh giá và ý nghĩa trong ngữ cảnh bảo mật}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{Chỉ số} & \textbf{Ý nghĩa bảo mật} & \textbf{Ưu tiên} \\
+\midrule
+Accuracy & Hiệu năng tổng thể & Trung bình \\
+Precision & Giảm cảnh báo sai (alert fatigue) & Cao \\
+Recall & Không bỏ sót tấn công & Rất cao \\
+F1-Score & Cân bằng Precision-Recall & Cao \\
+ROC-AUC & Khả năng phân biệt tổng quát & Cao \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Các chỉ số hiệu năng hệ thống}
+
+Ngoài các chỉ số phân loại, nghiên cứu còn đánh giá hiệu năng hệ thống thời gian thực:
+
+egin{itemize}
+\item \textbf{Latency (Độ trễ):} Thời gian từ khi nhận sự kiện log đến khi đưa ra quyết định phân loại.
+\item \textbf{Throughput (Thông lượng):} Số sự kiện xử lý được trong một đơn vị thời gian.
+\item \textbf{Memory usage (Sử dụng bộ nhớ):} Lượng bộ nhớ RAM tiêu thụ bởi mỗi thành phần.
+\item \textbf{CPU usage (Sử dụng CPU):} Mức sử dụng CPU của các dịch vụ trong điều kiện tải bình thường và tải cao.
+
+\end{itemize}
+Các chỉ số này đảm bảo hệ thống có khả năng hoạt động trong môi trường sản xuất thực tế với yêu cầu thời gian thực.
+
+
+\textbf{Tóm tắt Chương 3:} Chương này đã trình bày chi tiết phương pháp nghiên cứu bao gồm: kiến trúc tổng thể hệ thống với 9 dịch vụ Docker, quy trình thu thập và tiền xử lý dữ liệu từ hai nguồn (honeypot và simulation), chiến lược gán nhãn bán giám sát, 14 đặc trưng được thiết kế và trích xuất theo cửa sổ trượt 5 phút, ba mô hình phát hiện bất thường (IF, LOF, OCSVM) cùng phương pháp tối ưu siêu tham số, thuật toán ngưỡng động EWMA-Adaptive Percentile với các công thức toán học chi tiết, pipeline phát hiện thời gian thực, và module cảnh báo phòng chống tích hợp Fail2Ban. Các chỉ số đánh giá bao gồm Accuracy, Precision, Recall, F1-Score, và ROC-AUC được định nghĩa rõ ràng cùng ý nghĩa trong ngữ cảnh an toàn thông tin.

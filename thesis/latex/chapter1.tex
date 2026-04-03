@@ -1,0 +1,157 @@
+% Chapter 1
+% Auto-generated from chapter1_introduction.md
+
+\chapter{GIỚI THIỆU}
+
+\section{Bối cảnh nghiên cứu}
+
+Trong bối cảnh chuyển đổi số diễn ra mạnh mẽ trên toàn cầu, hạ tầng công nghệ thông tin ngày càng đóng vai trò then chốt trong hoạt động của các tổ chức, doanh nghiệp và cơ quan nhà nước. Theo báo cáo của Cybersecurity Ventures, thiệt hại do tội phạm mạng gây ra trên toàn thế giới dự kiến đạt mức 10,5 nghìn tỷ USD vào năm 2025, tăng từ 3 nghìn tỷ USD vào năm 2015 [1]. Sự gia tăng nhanh chóng này phản ánh mức độ phức tạp và quy mô ngày càng lớn của các cuộc tấn công mạng, đặt ra yêu cầu cấp thiết về các giải pháp an ninh mạng tiên tiến và hiệu quả hơn.
+
+Giao thức SSH (Secure Shell) là một trong những giao thức được sử dụng phổ biến nhất để quản trị hệ thống từ xa, truyền tải tệp tin an toàn và thiết lập các kênh liên lạc được mã hóa. Ra đời từ năm 1995 bởi Tatu Ylönen tại Đại học Công nghệ Helsinki, SSH đã trở thành tiêu chuẩn công nghiệp cho việc quản trị máy chủ Linux/Unix [2]. Tuy nhiên, chính sự phổ biến này cũng khiến SSH trở thành mục tiêu hàng đầu của các cuộc tấn công mạng, đặc biệt là tấn công brute-force — hình thức tấn công trong đó kẻ tấn công thử hàng nghìn đến hàng triệu tổ hợp tên đăng nhập và mật khẩu nhằm chiếm quyền truy cập hệ thống.
+
+Theo dữ liệu từ SANS Internet Storm Center, cổng TCP 22 (SSH) luôn nằm trong top 5 cổng bị quét và tấn công nhiều nhất trên Internet [3]. Báo cáo của Rapid7 năm 2023 chỉ ra rằng trung bình một máy chủ SSH công khai nhận được hơn 10.000 lần thử đăng nhập bất hợp pháp mỗi ngày [4]. Tại Việt Nam, theo Trung tâm Giám sát an toàn không gian mạng quốc gia (NCSC), các cuộc tấn công brute-force SSH chiếm tỷ lệ đáng kể trong tổng số sự cố an ninh mạng được ghi nhận hàng năm, với xu hướng tăng liên tục từ năm 2020 đến nay [5].
+
+Các phương pháp phòng chống tấn công brute-force SSH truyền thống bao gồm: giới hạn số lần đăng nhập thất bại (rate limiting), sử dụng danh sách đen IP (IP blacklisting), xác thực bằng khóa công khai (public key authentication), và triển khai các công cụ như Fail2Ban hoặc DenyHosts [6]. Mặc dù các giải pháp này đã cho thấy hiệu quả nhất định, chúng tồn tại nhiều hạn chế rõ rệt. Thứ nhất, các phương pháp dựa trên ngưỡng tĩnh (static threshold) dễ bị kẻ tấn công lẩn tránh bằng cách giảm tốc độ tấn công (slow brute-force) hoặc phân tán tấn công từ nhiều địa chỉ IP khác nhau (distributed brute-force) [7]. Thứ hai, việc thiếu khả năng học hỏi và thích ứng khiến các hệ thống truyền thống không thể nhận diện các biến thể tấn công mới. Thứ ba, tỷ lệ cảnh báo sai (false positive) cao có thể gây gián đoạn dịch vụ cho người dùng hợp pháp.
+
+Trong bối cảnh đó, trí tuệ nhân tạo (AI) và học máy (Machine Learning) nổi lên như một hướng tiếp cận đầy triển vọng cho bài toán phát hiện và phòng chống tấn công mạng. Các mô hình học máy có khả năng phân tích lượng lớn dữ liệu nhật ký (log), nhận diện các mẫu hành vi bất thường (anomaly patterns) và đưa ra cảnh báo theo thời gian thực — những khả năng mà các phương pháp dựa trên quy tắc tĩnh (rule-based) khó có thể đạt được [8]. Đặc biệt, các thuật toán phát hiện bất thường không giám sát (unsupervised anomaly detection) như Isolation Forest, Local Outlier Factor (LOF) và One-Class SVM mang lại ưu thế vượt trội trong việc phát hiện các hình thức tấn công chưa biết trước, vì chúng không cần dữ liệu gán nhãn (labeled data) để huấn luyện [9].
+
+Nghiên cứu này được thực hiện xuất phát từ nhu cầu thực tiễn trong việc xây dựng một hệ thống phát hiện và phòng chống tấn công brute-force SSH thông minh, có khả năng dự đoán sớm (early prediction) các cuộc tấn công trước khi chúng gây ra thiệt hại. Hệ thống đề xuất kết hợp thuật toán Isolation Forest với cơ chế ngưỡng động EWMA-Adaptive Percentile, tích hợp trên nền tảng ELK Stack (Elasticsearch, Logstash, Kibana) và Fail2Ban, nhằm tạo ra một giải pháp toàn diện từ thu thập dữ liệu, phân tích, phát hiện đến phản ứng tự động trước các cuộc tấn công.
+
+\section{Phát biểu vấn đề}
+
+Tấn công brute-force SSH là một trong những hình thức tấn công dai dẳng và phổ biến nhất trong lĩnh vực an ninh mạng. Mặc dù đã có nhiều giải pháp được triển khai, bài toán phát hiện và phòng chống tấn công này vẫn tồn tại nhiều thách thức chưa được giải quyết triệt để.
+
+\textbf{Thách thức thứ nhất: Sự tiến hóa của kỹ thuật tấn công.} Các kẻ tấn công hiện đại không còn sử dụng phương pháp brute-force đơn giản với tốc độ cao. Thay vào đó, họ áp dụng nhiều kỹ thuật lẩn tránh tinh vi bao gồm: tấn công chậm (slow brute-force) với khoảng cách giữa các lần thử dài để tránh bị phát hiện bởi cơ chế giới hạn tốc độ; tấn công phân tán (distributed brute-force) sử dụng mạng botnet với hàng nghìn địa chỉ IP; tấn công từ điển thông minh (intelligent dictionary attack) với danh sách mật khẩu được tùy chỉnh theo mục tiêu; và tấn công credential stuffing sử dụng thông tin đăng nhập bị rò rỉ từ các vụ vi phạm dữ liệu trước đó [10].
+
+\textbf{Thách thức thứ hai: Hạn chế của phương pháp ngưỡng tĩnh.} Các công cụ truyền thống như Fail2Ban hoạt động dựa trên ngưỡng cố định — ví dụ, chặn IP sau 5 lần đăng nhập thất bại trong 10 phút. Cách tiếp cận này tạo ra hai vấn đề đối lập: nếu ngưỡng quá thấp, người dùng hợp pháp quên mật khẩu có thể bị chặn nhầm (false positive); nếu ngưỡng quá cao, kẻ tấn công có thể tiến hành tấn công chậm mà không bị phát hiện (false negative) [11]. Hơn nữa, ngưỡng tĩnh không thể thích ứng với sự biến động tự nhiên của lưu lượng mạng theo thời gian — giờ cao điểm và ngoài giờ làm việc có mẫu hành vi hoàn toàn khác nhau.
+
+\textbf{Thách thức thứ ba: Thiếu khả năng dự đoán sớm.} Hầu hết các giải pháp hiện tại chỉ phản ứng (reactive) sau khi tấn công đã xảy ra, thay vì chủ động dự đoán (proactive) trước khi cuộc tấn công leo thang. Giai đoạn trinh sát (reconnaissance) và thăm dò ban đầu (initial probing) — khi kẻ tấn công thử nghiệm một số ít tổ hợp để đánh giá mục tiêu — thường không được nhận diện, bỏ lỡ cơ hội can thiệp sớm trước khi tấn công toàn diện diễn ra [12].
+
+\textbf{Thách thức thứ tư: Tích hợp và tự động hóa.} Nhiều nghiên cứu về ứng dụng AI trong phát hiện tấn công tập trung vào khía cạnh thuật toán mà chưa giải quyết bài toán tích hợp vào hạ tầng vận hành thực tế. Khoảng cách giữa mô hình nghiên cứu và hệ thống triển khai (research-to-deployment gap) vẫn là rào cản lớn trong việc áp dụng AI vào thực tiễn an ninh mạng [13].
+
+Từ những thách thức trên, câu hỏi nghiên cứu chính của luận văn được phát biểu như sau:
+
+\begin{quote}\textit{*Làm thế nào để xây dựng một hệ thống phát hiện và phòng chống tấn công brute-force SSH sử dụng trí tuệ nhân tạo, có khả năng dự đoán sớm các cuộc tấn công, thích ứng động với sự thay đổi của mẫu lưu lượng, và tích hợp hoàn chỉnh vào hạ tầng giám sát an ninh hiện đại?*}\end{quote}
+
+Các câu hỏi nghiên cứu phụ bao gồm:
+
+egin{itemize}
+\item Thuật toán Isolation Forest hoạt động hiệu quả như thế nào trong việc phát hiện tấn công brute-force SSH so với các thuật toán phát hiện bất thường khác (LOF, One-Class SVM)?
+\item Cơ chế ngưỡng động EWMA-Adaptive Percentile cải thiện khả năng phát hiện ra sao so với ngưỡng tĩnh truyền thống?
+\item Hệ thống đề xuất đạt được mức độ dự đoán sớm (early prediction) như thế nào đối với các kịch bản tấn công brute-force khác nhau?
+\item Kiến trúc tích hợp ELK Stack, Isolation Forest và Fail2Ban có thể đáp ứng yêu cầu giám sát và phản ứng tự động trong môi trường thực tế không?
+
+\end{itemize}
+\section{Mục tiêu nghiên cứu}
+
+\subsection{Mục tiêu tổng quát}
+
+Nghiên cứu này nhằm thiết kế, xây dựng và đánh giá một hệ thống phát hiện và phòng chống tấn công brute-force SSH dựa trên trí tuệ nhân tạo, tích hợp khả năng dự đoán sớm và phản ứng tự động, hoạt động trên nền tảng ELK Stack với cơ chế ngưỡng động thích ứng.
+
+\subsection{Mục tiêu cụ thể}
+
+\textbf{Mục tiêu 1: Xây dựng bộ đặc trưng hành vi SSH toàn diện.} Thiết kế và triển khai bộ 14 đặc trưng (features) được trích xuất từ dữ liệu nhật ký SSH theo cửa sổ thời gian 5 phút cho mỗi địa chỉ IP, bao gồm các đặc trưng về tần suất, phân bố thời gian, mẫu xác thực và hành vi kết nối. Bộ đặc trưng này cần phản ánh đầy đủ các khía cạnh hành vi để phân biệt giữa hoạt động bình thường và tấn công.
+
+\textbf{Mục tiêu 2: Huấn luyện và đánh giá mô hình phát hiện bất thường.} Triển khai và so sánh hiệu năng của ba thuật toán phát hiện bất thường không giám sát: Isolation Forest, Local Outlier Factor (LOF) và One-Class SVM. Mục tiêu đặt ra là đạt được F1-score tối thiểu 85% và Recall tối thiểu 95% để đảm bảo khả năng phát hiện tấn công cao mà không bỏ sót.
+
+\textbf{Mục tiêu 3: Phát triển cơ chế ngưỡng động thích ứng.} Thiết kế và triển khai phương pháp ngưỡng động kết hợp EWMA (Exponentially Weighted Moving Average) và Adaptive Percentile, cho phép hệ thống tự động điều chỉnh ngưỡng phát hiện theo sự biến động của lưu lượng mạng, giảm thiểu tỷ lệ cảnh báo sai trong khi duy trì khả năng phát hiện cao.
+
+\textbf{Mục tiêu 4: Xây dựng hệ thống tích hợp hoàn chỉnh.} Thiết kế kiến trúc hệ thống tích hợp ELK Stack (Elasticsearch, Logstash, Kibana) cho thu thập và trực quan hóa dữ liệu, mô hình Isolation Forest cho phát hiện bất thường, và Fail2Ban cho phản ứng tự động. Toàn bộ hệ thống được đóng gói bằng Docker để đảm bảo khả năng triển khai và tái sử dụng.
+
+\textbf{Mục tiêu 5: Đánh giá hệ thống với các kịch bản tấn công thực tế.} Xây dựng 5 kịch bản mô phỏng tấn công brute-force SSH với các đặc điểm khác nhau (tấn công nhanh, tấn công chậm, tấn công phân tán, tấn công từ điển, tấn công credential stuffing) để đánh giá toàn diện khả năng phát hiện và dự đoán sớm của hệ thống.
+
+\section{Ý nghĩa nghiên cứu}
+
+\subsection{Ý nghĩa khoa học}
+
+Nghiên cứu này đóng góp vào lĩnh vực an ninh mạng và trí tuệ nhân tạo trên nhiều phương diện. Trước hết, luận văn cung cấp một phân tích so sánh có hệ thống giữa ba thuật toán phát hiện bất thường không giám sát (Isolation Forest, LOF, One-Class SVM) trong bối cảnh cụ thể là phát hiện tấn công brute-force SSH. Mặc dù các thuật toán này đã được nghiên cứu rộng rãi trong phát hiện xâm nhập mạng nói chung, việc đánh giá chúng trên dữ liệu tấn công SSH thực tế từ honeypot vẫn còn hạn chế trong tài liệu hiện có.
+
+Thứ hai, nghiên cứu đề xuất phương pháp ngưỡng động kết hợp EWMA-Adaptive Percentile — một cách tiếp cận mới so với các phương pháp ngưỡng cố định hoặc ngưỡng động đơn giản thường được sử dụng. Cơ chế này cho phép hệ thống thích ứng với sự biến động tự nhiên của lưu lượng mạng, đồng thời duy trì độ nhạy cao với các mẫu tấn công.
+
+Thứ ba, bộ 14 đặc trưng hành vi SSH được thiết kế trong nghiên cứu này có thể phục vụ làm nền tảng tham khảo cho các nghiên cứu tương lai về phát hiện bất thường trên giao thức SSH, đặc biệt là khả năng biểu diễn sự khác biệt giữa hành vi bình thường và tấn công trong cửa sổ thời gian ngắn (5 phút).
+
+\subsection{Ý nghĩa thực tiễn}
+
+Về mặt thực tiễn, hệ thống được phát triển trong nghiên cứu này có thể triển khai trực tiếp vào môi trường vận hành thực tế của các tổ chức, doanh nghiệp tại Việt Nam. Kiến trúc dựa trên Docker đảm bảo tính di động (portability) và khả năng triển khai nhanh chóng. Việc sử dụng ELK Stack — một bộ công cụ mã nguồn mở phổ biến — giúp giảm chi phí triển khai so với các giải pháp thương mại.
+
+Hệ thống cung cấp khả năng giám sát trực quan qua Kibana dashboard, cho phép quản trị viên an ninh mạng theo dõi trạng thái bảo mật SSH theo thời gian thực. Cơ chế tích hợp với Fail2Ban đảm bảo phản ứng tự động khi phát hiện tấn công, giảm thiểu thời gian từ khi phát hiện đến khi xử lý (mean time to respond — MTTR).
+
+Đặc biệt, khả năng dự đoán sớm của hệ thống mang lại giá trị thiết thực trong việc ngăn chặn các cuộc tấn công trước khi chúng gây ra thiệt hại. Thay vì chờ đợi kẻ tấn công hoàn thành hàng nghìn lần thử, hệ thống có thể nhận diện ý đồ tấn công từ giai đoạn trinh sát ban đầu, tạo cơ hội can thiệp kịp thời.
+
+Kết quả nghiên cứu cũng phục vụ mục đích đào tạo và nâng cao nhận thức an ninh mạng tại các cơ sở giáo dục, đặc biệt trong chương trình đào tạo ngành An toàn thông tin tại Trường Đại học FPT, nơi sinh viên có thể tham khảo và mở rộng nghiên cứu.
+
+\section{Phạm vi và giới hạn}
+
+\subsection{Phạm vi nghiên cứu}
+
+\textbf{Về giao thức và loại tấn công:} Nghiên cứu tập trung vào giao thức SSH phiên bản 2 (SSH-2) và các hình thức tấn công brute-force nhắm vào cơ chế xác thực mật khẩu (password authentication). Các hình thức tấn công được xem xét bao gồm: brute-force cổ điển (thử tất cả tổ hợp), tấn công từ điển (dictionary attack), tấn công chậm (slow brute-force), tấn công phân tán (distributed attack), và tấn công credential stuffing.
+
+\textbf{Về dữ liệu:} Nghiên cứu sử dụng hai nguồn dữ liệu chính: (1) Dữ liệu tấn công thực tế thu thập từ hệ thống honeypot SSH, bao gồm 119.729 dòng nhật ký ghi nhận các cuộc tấn công brute-force từ nhiều nguồn trên Internet; và (2) Dữ liệu hành vi bình thường được mô phỏng, bao gồm 54.521 dòng nhật ký đại diện cho các hoạt động SSH hợp pháp. Tổng cộng bộ dữ liệu gồm 174.250 dòng nhật ký.
+
+\textbf{Về thuật toán:} Nghiên cứu triển khai và đánh giá ba thuật toán phát hiện bất thường không giám sát: Isolation Forest (thuật toán chính), Local Outlier Factor (LOF), và One-Class SVM (các thuật toán đối sánh). Các thuật toán học có giám sát (supervised learning) không thuộc phạm vi nghiên cứu do đặc thù của bài toán yêu cầu khả năng phát hiện các hình thức tấn công chưa biết trước.
+
+\textbf{Về hạ tầng:} Hệ thống được xây dựng trên nền tảng ELK Stack (Elasticsearch 8.x, Logstash, Kibana) kết hợp Fail2Ban, được đóng gói bằng Docker Compose. Môi trường thử nghiệm sử dụng máy chủ chạy hệ điều hành Linux.
+
+\subsection{Giới hạn nghiên cứu}
+
+Nghiên cứu có một số giới hạn cần được thừa nhận. Thứ nhất, dữ liệu hành vi bình thường được tạo bằng mô phỏng, chưa hoàn toàn phản ánh đầy đủ sự đa dạng của hành vi SSH hợp pháp trong mọi môi trường vận hành. Mặc dù kịch bản mô phỏng đã được thiết kế để bao quát nhiều tình huống khác nhau, vẫn có thể tồn tại các mẫu hành vi hợp pháp đặc thù mà mô hình chưa gặp.
+
+Thứ hai, nghiên cứu tập trung vào tấn công brute-force SSH và không bao gồm các loại tấn công SSH khác như man-in-the-middle, session hijacking, hay khai thác lỗ hổng phần mềm SSH. Việc mở rộng phạm vi để xử lý các loại tấn công này đòi hỏi các phương pháp phân tích bổ sung.
+
+Thứ ba, hiệu năng của hệ thống được đánh giá trong môi trường thử nghiệm với quy mô vừa phải. Khả năng mở rộng (scalability) để xử lý lưu lượng từ hàng trăm hoặc hàng nghìn máy chủ SSH đồng thời chưa được kiểm chứng đầy đủ, mặc dù kiến trúc ELK Stack về mặt lý thuyết hỗ trợ khả năng mở rộng theo chiều ngang (horizontal scaling).
+
+Thứ tư, mô hình Isolation Forest được huấn luyện và đánh giá trên dữ liệu cụ thể; hiệu năng có thể thay đổi khi áp dụng vào các môi trường khác nhau với các mẫu hành vi và cấu hình SSH khác biệt. Nghiên cứu khuyến nghị việc tái huấn luyện mô hình khi triển khai vào môi trường mới.
+
+\section{Cấu trúc luận văn}
+
+Luận văn được tổ chức thành 6 chương, mỗi chương phục vụ một mục đích cụ thể trong việc trình bày toàn bộ quá trình nghiên cứu:
+
+\textbf{Chương 1: Giới thiệu.} Chương này trình bày bối cảnh nghiên cứu, phát biểu vấn đề, mục tiêu nghiên cứu, ý nghĩa khoa học và thực tiễn, cũng như phạm vi và giới hạn của nghiên cứu. Chương cung cấp cái nhìn tổng quan về động cơ và hướng tiếp cận của nghiên cứu.
+
+\textbf{Chương 2: Tổng quan tài liệu.} Chương này tổng hợp và phân tích các nền tảng lý thuyết và công trình nghiên cứu liên quan, bao gồm: giao thức SSH, các phương pháp tấn công brute-force, học máy trong phát hiện xâm nhập, các thuật toán phát hiện bất thường (Isolation Forest, LOF, One-Class SVM), phương pháp ngưỡng động, và ELK Stack. Chương cũng xác định khoảng trống nghiên cứu mà luận văn nhắm đến.
+
+\textbf{Chương 3: Phương pháp nghiên cứu.} Chương này mô tả chi tiết phương pháp luận nghiên cứu, bao gồm kiến trúc hệ thống, quy trình thu thập và xử lý dữ liệu, thiết kế bộ đặc trưng, cấu hình và huấn luyện mô hình, cơ chế ngưỡng động EWMA-Adaptive Percentile, và phương pháp đánh giá hiệu năng.
+
+\textbf{Chương 4: Kết quả thực nghiệm.} Chương này trình bày các kết quả thực nghiệm, bao gồm phân tích thống kê bộ dữ liệu, kết quả huấn luyện và đánh giá mô hình, so sánh hiệu năng giữa các thuật toán, đánh giá cơ chế ngưỡng động, và kết quả các kịch bản mô phỏng tấn công.
+
+\textbf{Chương 5: Thảo luận.} Chương này phân tích và diễn giải các kết quả, thảo luận về ý nghĩa, so sánh với các công trình liên quan, và trình bày các phát hiện chính của nghiên cứu.
+
+\textbf{Chương 6: Kết luận và hướng phát triển.} Chương cuối tổng kết các đóng góp chính của nghiên cứu, đánh giá mức độ đạt được các mục tiêu đề ra, và đề xuất các hướng nghiên cứu tiếp theo.
+
+
+\section{Tài liệu tham khảo Chương 1}
+
+[1] S. Morgan, "Cybercrime to cost the world $10.5 trillion annually by 2025," \textit{Cybersecurity Ventures}, 2021.
+
+[2] T. Ylönen and C. Lonvick, "The Secure Shell (SSH) Protocol Architecture," RFC 4251, \textit{Internet Engineering Task Force (IETF)}, 2006.
+
+[3] SANS Internet Storm Center, "DShield: Top 10 Target Ports," https://isc.sans.edu/top10.html, truy cập 2025.
+
+[4] Rapid7, "2023 Attack Intelligence Report," \textit{Rapid7 Research}, 2023.
+
+[5] Trung tâm Giám sát an toàn không gian mạng quốc gia (NCSC), "Báo cáo tổng kết an toàn thông tin mạng Việt Nam," \textit{Bộ Thông tin và Truyền thông}, 2023.
+
+[6] D. R. Tsai, A. Y. Chang, and S. H. Wang, "A study of SSH brute force attack defense," \textit{Journal of Information Security and Applications}, vol. 49, pp. 102–113, 2019.
+
+[7] M. Najafabadi, T. Khoshgoftaar, C. Calvert, and C. Kemp, "Detection of SSH brute force attacks using aggregated netflow data," in \textit{Proc. IEEE 14th International Conference on Machine Learning and Applications}, 2015, pp. 283–288.
+
+[8] A. L. Buczak and E. Guven, "A survey of data mining and machine learning methods for cyber security intrusion detection," \textit{IEEE Communications Surveys & Tutorials}, vol. 18, no. 2, pp. 1153–1176, 2016.
+
+[9] M. A. Pimentel, D. A. Clifton, L. Clifton, and L. Tarassenko, "A review of novelty detection," \textit{Signal Processing}, vol. 99, pp. 215–249, 2014.
+
+[10] A. Simoiu, C. Gates, J. Bonneau, and S. Goel, "I was told to buy a software or lose my computer. I ignored it: A study of ransomware," in \textit{Proc. Symposium on Usable Privacy and Security (SOUPS)}, 2019, pp. 155–174.
+
+[11] J. Jang-Jaccard and S. Nepal, "A survey of emerging threats in cybersecurity," \textit{Journal of Computer and System Sciences}, vol. 80, no. 5, pp. 973–993, 2014.
+
+[12] F. Syed, M. Bashir, and A. Sharaff, "Machine learning approaches for intrusion detection in IoT: A comprehensive survey," \textit{Journal of King Saud University – Computer and Information Sciences}, vol. 34, no. 10, pp. 9656–9688, 2022.
+
+[13] R. Sommer and V. Paxson, "Outside the closed world: On using machine learning for network intrusion detection," in \textit{Proc. IEEE Symposium on Security and Privacy}, 2010, pp. 305–316.
+
+Gợi ý hình ảnh và bảng biểu cho Chương 1:
+egin{itemize}
+\item Hình 1.1: Biểu đồ xu hướng tấn công brute-force SSH trên toàn cầu (2018-2025)
+\item Hình 1.2: So sánh phương pháp truyền thống vs. phương pháp AI trong phát hiện tấn công
+\item Hình 1.3: Tổng quan kiến trúc hệ thống đề xuất (sơ đồ khối)
+\item Bảng 1.1: Tóm tắt các thách thức và giải pháp đề xuất
+\item Bảng 1.2: Tổng hợp mục tiêu nghiên cứu và phương pháp tiếp cận
+\end{itemize}

@@ -1,0 +1,149 @@
+% Chapter 5
+% Auto-generated from chapter5_discussion.md
+
+\chapter{THẢO LUẬN (Discussion)}
+
+\section{Phân tích kết quả mô hình}
+
+\subsection{Hiệu năng tổng thể của ba mô hình}
+
+Kết quả thực nghiệm cho thấy cả ba mô hình Isolation Forest (IF), Local Outlier Factor (LOF) và One-Class SVM (OCSVM) đều đạt hiệu năng cao trong việc phát hiện tấn công brute-force SSH, với chỉ số Recall đạt gần tuyệt đối (99.99\%-100\%). Điều này chứng minh rằng phương pháp phát hiện bất thường bán giám sát (semi-supervised anomaly detection) - huấn luyện chỉ trên dữ liệu bình thường - là phù hợp cho bài toán phát hiện tấn công SSH.
+
+Sau quá trình tối ưu hóa, kết quả được cải thiện đáng kể:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lllll}
+\toprule
+\textbf{Mô hình} & \textbf{Accuracy} & \textbf{F1-Score} & \textbf{FPR} & \textbf{ROC-AUC} \\
+\midrule
+	extbf{Isolation Forest} & 	extbf{90.31%} & 	extbf{93.74%} & 	extbf{29.00%} & 	extbf{86.61%} \\
+LOF & 83.22% & 89.94% & 67.10% & 65.24% \\
+One-Class SVM & 91.38% & 94.55% & 33.42% & 83.42% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+So với baseline trước tối ưu, IF cải thiện mạnh nhất: Accuracy tăng từ 80.76\% lên 90.31\% (+9.55\%), FPR giảm từ 76.92\% xuống 29.00\% (giảm 47.92 điểm phần trăm). Sự cải thiện này đến từ việc: (1) sử dụng non-overlapping windows giảm sự tương quan giữa các feature vectors, (2) bổ sung 9 derived features tăng khả năng phân biệt, và (3) điều chỉnh tham số contamination phù hợp.
+
+\subsection{Vai trò của Isolation Forest trong hệ thống dynamic threshold}
+
+Mặc dù OCSVM đạt F1-Score cao nhất (94.55\%), Isolation Forest được chọn làm mô hình chính vì những lý do sau:
+
+\textbf{Thứ nhất}, IF tạo ra anomaly score liên tục (continuous) dựa trên chiều dài đường đi trung bình (average path length) trong các cây quyết định ngẫu nhiên. Đặc tính này rất quan trọng cho thuật toán ngưỡng động EWMA-Adaptive Percentile, vốn yêu cầu đầu vào là một dãy điểm số liên tục để tính toán EWMA và percentile. LOF và OCSVM cũng tạo anomaly score, nhưng phân phối điểm số của IF mượt mà hơn và ít nhạy với outlier cực đoan [14].
+
+\textbf{Thứ hai}, IF có độ phức tạp thời gian huấn luyện O(n log n), hiệu quả hơn đáng kể so với OCSVM (O(n²) đến O(n³)) và LOF (O(n² log n)) khi xử lý dữ liệu lớn [15]. Trong hệ thống real-time, khả năng re-train nhanh chóng khi có dữ liệu mới là yếu tố quan trọng.
+
+\textbf{Thứ ba}, IF không yêu cầu giả định về phân phối dữ liệu hay khoảng cách (distance metric), phù hợp với tính chất đa chiều và phi tuyến của dữ liệu SSH log features [14].
+
+\subsection{Phân tích tầm quan trọng đặc trưng}
+
+Kết quả permutation importance cho thấy các đặc trưng thời gian (timing features) chiếm ưu thế rõ rệt:
+
+egin{itemize}
+\item \textbf{session_duration_mean} (5.50%): Phiên tấn công có thời lượng cực ngắn (connect-fail-disconnect) so với phiên đăng nhập bình thường. Đây là đặc trưng phân biệt mạnh nhất.
+\item \textbf{min_inter_attempt_time} (3.86%): Khoảng cách tối thiểu giữa các lần thử phản ánh tốc độ tấn công tự động (automated tools).
+\item \textbf{mean_inter_attempt_time} (2.61%): Thời gian trung bình giữa các lần thử cho thấy pattern đều đặn của bot vs không đều của người dùng.
+
+\end{itemize}
+Điều đáng chú ý là các đặc trưng đếm truyền thống (fail\_count, invalid\_user\_count) có importance gần bằng 0. Nguyên nhân là mô hình được huấn luyện trên dữ liệu bình thường (simulation) nơi các đặc trưng này luôn có giá trị thấp, nên mô hình học được sự bất thường chủ yếu từ biến đổi thời gian và pattern kết nối.
+
+Phát hiện này phù hợp với nghiên cứu của Javed và Paxson (2013) [23] cho thấy timing characteristics là yếu tố phân biệt hiệu quả nhất giữa SSH brute-force attacks và hoạt động SSH bình thường.
+
+\section{Hiệu quả của thuật toán ngưỡng động}
+
+\subsection{So sánh với ngưỡng tĩnh}
+
+Ngưỡng tĩnh (static threshold) như trong Fail2Ban hoạt động theo nguyên tắc: nếu số lần đăng nhập thất bại từ một IP vượt quá N lần trong T giây, IP đó bị chặn. Phương pháp này có ba hạn chế chính:
+
+egin{itemize}
+\item \textbf{Không phát hiện tấn công low-and-slow}: Kẻ tấn công có thể giãn khoảng cách giữa các lần thử (30-120 giây) để luôn nằm dưới ngưỡng.
+\item \textbf{Không có khả năng dự đoán sớm}: Fail2Ban chỉ phản ứng SAU KHI ngưỡng bị vượt.
+\item \textbf{Không tự thích ứng}: Ngưỡng cố định không điều chỉnh theo mức baseline thay đổi.
+
+\end{itemize}
+Thuật toán EWMA-Adaptive Percentile khắc phục cả ba vấn đề:
+egin{itemize}
+\item EWMA tích lũy anomaly scores theo thời gian, phát hiện xu hướng tăng dần ngay cả khi mỗi lần thử riêng lẻ chưa đạt ngưỡng.
+\item Two-level detection (EARLY\_WARNING ở 67\% ngưỡng ALERT) cho phép cảnh báo sớm.
+\item Adaptive percentile tự điều chỉnh ngưỡng dựa trên phân phối scores gần đây.
+
+\end{itemize}
+\subsection{Dự đoán sớm tấn công}
+
+Khả năng dự đoán sớm là đóng góp chính của nghiên cứu. Trong kịch bản tấn công low-and-slow (Scenario 3, khoảng cách 30-120s), hệ thống phát cảnh báo EARLY\_WARNING sau 3-5 lần thử (~2-3 phút), trong khi Fail2Ban với cấu hình mặc định (maxretry=5, findtime=600s) sẽ cần ít nhất 5 lần thử và không phát hiện nếu kẻ tấn công giãn khoảng cách đủ lớn.
+
+Cơ chế EWMA đóng vai trò then chốt: mỗi anomaly score bất thường đều đẩy giá trị EWMA lên, và với alpha=0.3, hiệu ứng tích lũy từ 3-5 lần thử đủ để vượt ngưỡng early warning. Giá trị alpha=0.3 được chọn để cân bằng giữa khả năng phản hồi nhanh và khả năng lọc nhiễu.
+
+\subsection{Tỷ lệ cảnh báo sai (False Positive Rate)}
+
+FPR sau tối ưu là 29\% cho IF, nghĩa là khoảng 29\% hoạt động bình thường bị nhận diện sai là tấn công. Trong bối cảnh bảo mật, đây là mức chấp nhận được vì:
+egin{itemize}
+\item Cost of false negative (bỏ lỡ tấn công) cao hơn nhiều so với cost of false positive (cảnh báo thừa).
+\item Hệ thống sử dụng two-level detection: EARLY\_WARNING chỉ ghi log, không chặn IP. Chỉ ALERT mới kích hoạt Fail2Ban.
+\item Cơ chế self-calibration tự điều chỉnh ngưỡng để giảm FPR theo thời gian.
+
+\end{itemize}
+\section{So sánh với các công trình liên quan}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llllll}
+\toprule
+\textbf{Nghiên cứu} & \textbf{Phương pháp} & \textbf{Dataset} & \textbf{Dự đoán sớm} & \textbf{Real-time} & \textbf{F1} \\
+\midrule
+Sperotto et al. (2010) [8] & Flow-based & DARPA & Không & Không & - \\
+Kim et al. (2019) [24] & Random Forest & NSL-KDD & Không & Không & 0.92 \\
+Ahmed et al. (2020) [25] & Autoencoder & CICIDS & Không & Có & 0.89 \\
+Nassif et al. (2021) [26] & ML Survey & Multiple & Không & Varies & - \\
+	extbf{Nghiên cứu này} & 	extbf{IF + EWMA} & 	extbf{Real SSH} & 	extbf{Có} & 	extbf{Có} & 	extbf{0.937} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Điểm khác biệt chính:
+egin{itemize}
+\item \textbf{Dataset thực tế}: Sử dụng log SSH thực từ honeypot VPS thay vì benchmark datasets (NSL-KDD, CICIDS) vốn đã cũ và không phản ánh pattern tấn công hiện đại.
+\item \textbf{Dự đoán sớm}: Là nghiên cứu đầu tiên kết hợp IF với EWMA dynamic threshold cho SSH early prediction.
+\item \textbf{End-to-end system}: Triển khai hệ thống hoàn chỉnh từ log parsing đến auto-blocking, không chỉ là thực nghiệm offline.
+
+\end{itemize}
+\section{Khả năng mở rộng}
+
+Hệ thống được containerize với Docker Compose (9 services), cho phép:
+egin{itemize}
+\item \textbf{Scale horizontally}: Có thể deploy nhiều detector workers cho nhiều server.
+\item \textbf{Cloud deployment}: Docker images có thể deploy lên Kubernetes hoặc cloud platforms.
+\item \textbf{Multi-server monitoring}: Filebeat có thể thu thập logs từ nhiều server đồng thời.
+
+\end{itemize}
+Tuy nhiên, khi số lượng active IPs tăng lên hàng nghìn, cần xem xét:
+egin{itemize}
+\item Sử dụng Redis Streams thay vì in-memory deques cho per-IP windows.
+\item Batch scoring thay vì scoring từng IP riêng lẻ.
+\item Horizontal scaling cho detection workers.
+
+\end{itemize}
+\section{Hạn chế của nghiên cứu}
+
+egin{itemize}
+\item \textbf{Concept drift}: Pattern tấn công thay đổi theo thời gian. Mô hình hiện tại cần periodic retraining để duy trì hiệu quả. Nghiên cứu tương lai có thể áp dụng online learning.
+
+\item \textbf{SSH key-based attacks}: Nghiên cứu chỉ tập trung vào password-based brute-force. Các cuộc tấn công sử dụng SSH key bị đánh cắp không tạo ra pattern "Failed password" và không được phát hiện.
+
+\item \textbf{Phụ thuộc vào format log}: Log parser được thiết kế cho syslog format chuẩn. Các hệ thống sử dụng custom log format cần điều chỉnh parser.
+
+\item \textbf{Đa dạng dữ liệu huấn luyện}: Dữ liệu huấn luyện chỉ từ một nguồn simulation. Trong production, nên thu thập dữ liệu bình thường từ nhiều server với các pattern sử dụng khác nhau.
+
+\item \textbf{FPR có thể cải thiện thêm}: Mặc dù đã giảm từ 77% xuống 29%, FPR vẫn có thể được cải thiện bằng cách sử dụng kỹ thuật ensemble hoặc deep learning.
+
+\end{itemize}
+\section{Tài liệu tham khảo chương này}
+
+[8] Sperotto, A. et al. (2010). An Overview of IP Flow-Based Intrusion Detection. IEEE Communications Surveys \& Tutorials.
+[14] Liu, F.T. et al. (2008). Isolation Forest. IEEE ICDM.
+[15] Liu, F.T. et al. (2012). Isolation-Based Anomaly Detection. ACM TKDD.
+[23] Javed, M. \& Paxson, V. (2013). Detecting Stealthy, Distributed SSH Brute-Forcing. ACM CCS.
+[24] Kim, J. et al. (2019). A Survey of ML Approaches to Intrusion Detection. Neurocomputing.
+[25] Ahmed, M. et al. (2020). Deep Learning for Network Anomaly Detection. Computer Networks.
+[26] Nassif, A.B. et al. (2021). Machine Learning for Anomaly Detection: A Systematic Review. IEEE Access.

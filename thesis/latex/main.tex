@@ -1,0 +1,383 @@
+% ============================================================
+% KHÓA LUẬN TỐT NGHIỆP - ĐẠI HỌC FPT
+% Ứng dụng AI trong phát hiện và phòng chống tấn công
+% Brute-force trên hệ thống SSH với dự đoán sớm
+% ============================================================
+\documentclass[13pt,a4paper,oneside]{report}
+
+% ============================================================
+% PACKAGES
+% ============================================================
+\usepackage[utf8]{inputenc}
+\usepackage[vietnamese,english]{babel}
+\usepackage[T5]{fontenc}
+\usepackage{times}
+\usepackage[top=3.5cm,bottom=3cm,left=3.5cm,right=2cm]{geometry}
+\usepackage{setspace}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{amsmath,amssymb}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{listings}
+\usepackage{color}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{enumitem}
+\usepackage{url}
+\usepackage[numbers]{natbib}
+\usepackage{indentfirst}
+\usepackage{pdfpages}
+
+% ============================================================
+% CONFIGURATION
+% ============================================================
+\onehalfspacing
+\setlength{\parindent}{1.27cm}
+\setlength{\parskip}{6pt}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=blue,
+    urlcolor=blue,
+}
+
+% Code listing style
+\lstset{
+    basicstyle=\small\ttfamily,
+    breaklines=true,
+    frame=single,
+    backgroundcolor=\color{gray!10},
+    keywordstyle=\color{blue},
+    commentstyle=\color{green!50!black},
+    stringstyle=\color{red!70!black},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    tabsize=4,
+}
+
+% Header/Footer
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[R]{\thepage}
+\fancyhead[L]{\leftmark}
+\renewcommand{\headrulewidth}{0.5pt}
+
+% Chapter formatting
+\titleformat{\chapter}[display]
+    {\normalfont\Large\bfseries\centering}
+    {\MakeUppercase{\chaptertitlename}\ \thechapter}{12pt}{\LARGE\MakeUppercase}
+\titlespacing*{\chapter}{0pt}{-20pt}{20pt}
+
+% Section formatting
+\titleformat{\section}{\normalfont\large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalfont\normalsize\bfseries}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\normalfont\normalsize\bfseries\itshape}{\thesubsubsection}{1em}{}
+
+% ============================================================
+% DOCUMENT BEGIN
+% ============================================================
+\begin{document}
+
+% ============================================================
+% TITLE PAGE
+% ============================================================
+\begin{titlepage}
+\begin{center}
+\textbf{\large TRƯỜNG ĐẠI HỌC FPT}\\[2pt]
+\textbf{\large KHOA CÔNG NGHỆ THÔNG TIN}\\[2pt]
+\textbf{Chuyên ngành: An toàn thông tin}\\[1cm]
+
+\rule{\textwidth}{1pt}\\[1.5cm]
+
+{\LARGE \textbf{KHÓA LUẬN TỐT NGHIỆP}}\\[0.8cm]
+
+{\Large \textbf{ỨNG DỤNG AI TRONG PHÁT HIỆN VÀ PHÒNG CHỐNG}}\\[0.3cm]
+{\Large \textbf{TẤN CÔNG BRUTE-FORCE TRÊN HỆ THỐNG SSH}}\\[0.3cm]
+{\Large \textbf{VỚI DỰ ĐOÁN SỚM}}\\[0.8cm]
+
+{\large \textit{Application of AI in Detecting and Preventing}}\\
+{\large \textit{Brute-Force Attacks on SSH Systems with Early Prediction}}\\[1.5cm]
+
+\rule{\textwidth}{1pt}\\[1.5cm]
+
+\begin{tabular}{ll}
+\textbf{Sinh viên thực hiện:} & [Tên sinh viên] \\
+\textbf{Mã số sinh viên:} & [MSSV] \\
+\textbf{Giảng viên hướng dẫn:} & [Tên GVHD] \\
+\textbf{Lớp:} & [Mã lớp] \\
+\end{tabular}
+
+\vfill
+
+{\large \textbf{Hà Nội, 2026}}
+\end{center}
+\end{titlepage}
+
+% ============================================================
+% FRONT MATTER
+% ============================================================
+\pagenumbering{roman}
+
+% ACKNOWLEDGEMENT
+\chapter*{LỜI CẢM ƠN}
+\addcontentsline{toc}{chapter}{LỜI CẢM ƠN}
+
+Lời đầu tiên, nhóm chúng em xin gửi lời cảm ơn chân thành và sâu sắc nhất đến giảng viên hướng dẫn đã tận tình chỉ bảo, định hướng và hỗ trợ nhóm trong suốt quá trình thực hiện khóa luận tốt nghiệp.
+
+Chúng em xin cảm ơn Ban Giám hiệu Trường Đại học FPT, Khoa Công nghệ Thông tin và các thầy cô trong chuyên ngành An toàn thông tin đã tạo điều kiện thuận lợi cho chúng em học tập và nghiên cứu.
+
+Chúng em cũng xin gửi lời cảm ơn đến gia đình, bạn bè và các thành viên trong nhóm đã luôn động viên, hỗ trợ và đóng góp ý kiến quý báu trong quá trình thực hiện đề tài.
+
+Mặc dù nhóm đã nỗ lực hết sức, khóa luận không tránh khỏi những thiếu sót. Nhóm rất mong nhận được sự góp ý từ quý thầy cô và Hội đồng để hoàn thiện hơn.
+
+\vspace{1cm}
+\begin{flushright}
+\textit{Hà Nội, tháng 4 năm 2026}\\
+\textit{Nhóm sinh viên thực hiện}
+\end{flushright}
+
+% ABSTRACT
+\chapter*{TÓM TẮT}
+\addcontentsline{toc}{chapter}{TÓM TẮT}
+
+Tấn công brute-force SSH là một trong những mối đe dọa phổ biến và dai dẳng nhất trong lĩnh vực an ninh mạng. Các công cụ phòng chống truyền thống như Fail2Ban hoạt động dựa trên ngưỡng tĩnh, chỉ phản ứng sau khi tấn công đã xảy ra và dễ bị lẩn tránh bởi các kỹ thuật tấn công tiên tiến như low-and-slow hoặc distributed brute-force.
+
+Khóa luận này trình bày việc thiết kế, triển khai và đánh giá một hệ thống phát hiện và phòng chống tấn công brute-force SSH sử dụng trí tuệ nhân tạo, với khả năng dự đoán sớm (early prediction) các cuộc tấn công trước khi chúng leo thang. Hệ thống sử dụng thuật toán Isolation Forest làm mô hình phát hiện bất thường chính, kết hợp với cơ chế ngưỡng động EWMA-Adaptive Percentile (Exponentially Weighted Moving Average kết hợp Percentile thích ứng) để cung cấp khả năng cảnh báo sớm hai mức (EARLY\_WARNING và ALERT).
+
+Bộ dữ liệu nghiên cứu gồm 174.250 dòng nhật ký SSH, bao gồm dữ liệu tấn công thực tế từ hệ thống honeypot (119.729 dòng, 679 địa chỉ IP tấn công) và dữ liệu hành vi bình thường từ môi trường mô phỏng (54.521 dòng, 64 người dùng). Hệ thống trích xuất 14 đặc trưng hành vi theo cửa sổ thời gian 5 phút cho mỗi địa chỉ IP nguồn.
+
+Kết quả thực nghiệm cho thấy Isolation Forest đạt F1-Score 93,74\%, Accuracy 90,31\% và False Positive Rate 29,00\% sau tối ưu hóa, cải thiện đáng kể so với baseline (F1 tăng 5,11\%, FPR giảm 47,92\%). So sánh với hai mô hình đối sánh LOF (F1=89,94\%) và One-Class SVM (F1=94,55\%), Isolation Forest được chọn làm mô hình chính nhờ khả năng tạo anomaly score liên tục phù hợp cho thuật toán ngưỡng động.
+
+Hệ thống được triển khai hoàn chỉnh với kiến trúc microservices, bao gồm: pipeline phát hiện thời gian thực (Python asyncio), backend API (FastAPI), dashboard giám sát (React), trực quan hóa (ELK Stack/Kibana), cảnh báo (email/WebSocket), và tự động chặn IP (Fail2Ban). Toàn bộ hệ thống được đóng gói bằng Docker Compose (9 services) để đảm bảo khả năng triển khai trong môi trường production.
+
+\vspace{0.5cm}
+\noindent\textbf{Từ khóa:} SSH, brute-force, phát hiện bất thường, Isolation Forest, ngưỡng động, EWMA, dự đoán sớm, học máy, ELK Stack, Fail2Ban.
+
+% ABSTRACT ENGLISH
+\chapter*{ABSTRACT}
+\addcontentsline{toc}{chapter}{ABSTRACT}
+
+SSH brute-force attacks remain one of the most prevalent and persistent threats in cybersecurity. Traditional defense tools such as Fail2Ban operate on static thresholds, reacting only after an attack has occurred and being easily evaded by advanced techniques such as low-and-slow or distributed brute-force attacks.
+
+This thesis presents the design, implementation, and evaluation of an AI-powered system for detecting and preventing SSH brute-force attacks with early prediction capability. The system employs Isolation Forest as the primary anomaly detection model, combined with an EWMA-Adaptive Percentile dynamic threshold mechanism to provide two-level early warnings (EARLY\_WARNING and ALERT).
+
+The research dataset comprises 174,250 SSH log entries, including real attack data from a honeypot system (119,729 lines, 679 attacking IPs) and normal behavior data from a simulated environment (54,521 lines, 64 users). The system extracts 14 behavioral features per 5-minute time window for each source IP.
+
+Experimental results demonstrate that Isolation Forest achieves an F1-Score of 93.74\%, Accuracy of 90.31\%, and False Positive Rate of 29.00\% after optimization. The system was benchmarked against LOF (F1=89.94\%) and One-Class SVM (F1=94.55\%). The complete system is deployed as a Docker Compose stack with 9 services, including real-time detection pipeline, FastAPI backend, React dashboard, ELK Stack visualization, email/WebSocket alerts, and Fail2Ban integration.
+
+\vspace{0.5cm}
+\noindent\textbf{Keywords:} SSH, brute-force, anomaly detection, Isolation Forest, dynamic threshold, EWMA, early prediction, machine learning, ELK Stack, Fail2Ban.
+
+% TABLE OF CONTENTS
+\tableofcontents
+
+% LIST OF FIGURES
+\listoffigures
+\addcontentsline{toc}{chapter}{DANH MỤC HÌNH ẢNH}
+
+% LIST OF TABLES
+\listoftables
+\addcontentsline{toc}{chapter}{DANH MỤC BẢNG BIỂU}
+
+% ABBREVIATIONS
+\chapter*{DANH MỤC TỪ VIẾT TẮT}
+\addcontentsline{toc}{chapter}{DANH MỤC TỪ VIẾT TẮT}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{Từ viết tắt} & \textbf{Ý nghĩa} \\
+\midrule
+AI & Artificial Intelligence (Trí tuệ nhân tạo) \\
+API & Application Programming Interface \\
+AUC & Area Under the Curve \\
+CRON & Command Run ON \\
+ELK & Elasticsearch, Logstash, Kibana \\
+EWMA & Exponentially Weighted Moving Average \\
+FN & False Negative \\
+FP & False Positive \\
+FPR & False Positive Rate \\
+HTTP & Hypertext Transfer Protocol \\
+IF & Isolation Forest \\
+IP & Internet Protocol \\
+LOF & Local Outlier Factor \\
+ML & Machine Learning (Học máy) \\
+OCSVM & One-Class Support Vector Machine \\
+PAM & Pluggable Authentication Modules \\
+PR-AUC & Precision-Recall Area Under the Curve \\
+RBF & Radial Basis Function \\
+RFC & Request for Comments \\
+ROC & Receiver Operating Characteristic \\
+SFTP & SSH File Transfer Protocol \\
+SIEM & Security Information and Event Management \\
+SMTP & Simple Mail Transfer Protocol \\
+SSH & Secure Shell \\
+SVM & Support Vector Machine \\
+TCP & Transmission Control Protocol \\
+TN & True Negative \\
+TP & True Positive \\
+\bottomrule
+\end{longtable}
+
+% ============================================================
+% MAIN MATTER
+% ============================================================
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+% Include chapters
+\input{chapter1}
+\input{chapter2}
+\input{chapter3}
+\input{chapter4}
+\input{chapter5}
+\input{chapter6}
+
+% ============================================================
+% REFERENCES
+% ============================================================
+\chapter*{TÀI LIỆU THAM KHẢO}
+\addcontentsline{toc}{chapter}{TÀI LIỆU THAM KHẢO}
+
+\begin{enumerate}[label={[\arabic*]}]
+
+\item S. Morgan, ``Cybercrime to cost the world \$10.5 trillion annually by 2025,'' \textit{Cybersecurity Ventures}, 2021.
+
+\item T. Ylönen and C. Lonvick, ``The Secure Shell (SSH) Protocol Architecture,'' RFC 4251, \textit{IETF}, 2006.
+
+\item SANS Internet Storm Center, ``DShield: Top 10 Target Ports,'' \url{https://isc.sans.edu/top10.html}, 2025.
+
+\item Rapid7, ``2023 Attack Intelligence Report,'' \textit{Rapid7 Research}, 2023.
+
+\item Trung tâm Giám sát an toàn không gian mạng quốc gia (NCSC), ``Báo cáo tổng kết an toàn thông tin mạng Việt Nam,'' \textit{Bộ TT\&TT}, 2023.
+
+\item D. R. Tsai, A. Y. Chang, and S. H. Wang, ``A study of SSH brute force attack defense,'' \textit{J. Information Security and Applications}, vol. 49, pp. 102--113, 2019.
+
+\item M. Najafabadi et al., ``Detection of SSH brute force attacks using aggregated netflow data,'' in \textit{Proc. IEEE 14th ICMLA}, 2015, pp. 283--288.
+
+\item A. L. Buczak and E. Guven, ``A survey of data mining and machine learning methods for cyber security intrusion detection,'' \textit{IEEE Comm. Surveys \& Tutorials}, vol. 18, no. 2, pp. 1153--1176, 2016.
+
+\item M. A. Pimentel et al., ``A review of novelty detection,'' \textit{Signal Processing}, vol. 99, pp. 215--249, 2014.
+
+\item V. Chandola, A. Banerjee, and V. Kumar, ``Anomaly detection: A survey,'' \textit{ACM Computing Surveys}, vol. 41, no. 3, pp. 1--58, 2009.
+
+\item J. Jang-Jaccard and S. Nepal, ``A survey of emerging threats in cybersecurity,'' \textit{J. Computer and System Sciences}, vol. 80, no. 5, pp. 973--993, 2014.
+
+\item F. Syed, M. Bashir, and A. Sharaff, ``Machine learning approaches for intrusion detection in IoT: A comprehensive survey,'' \textit{J. King Saud Univ.}, vol. 34, no. 10, 2022.
+
+\item R. Sommer and V. Paxson, ``Outside the closed world: On using machine learning for network intrusion detection,'' in \textit{Proc. IEEE S\&P}, 2010, pp. 305--316.
+
+\item F. T. Liu, K. M. Ting, and Z.-H. Zhou, ``Isolation Forest,'' in \textit{Proc. IEEE ICDM}, 2008, pp. 413--422.
+
+\item F. T. Liu, K. M. Ting, and Z.-H. Zhou, ``Isolation-based anomaly detection,'' \textit{ACM Trans. Knowledge Discovery from Data}, vol. 6, no. 1, pp. 1--39, 2012.
+
+\item M. M. Breunig et al., ``LOF: Identifying density-based local outliers,'' in \textit{Proc. ACM SIGMOD}, 2000, pp. 93--104.
+
+\item B. Schölkopf et al., ``Estimating the support of a high-dimensional distribution,'' \textit{Neural Computation}, vol. 13, no. 7, pp. 1443--1471, 2001.
+
+\item D. C. Montgomery, \textit{Introduction to Statistical Quality Control}, 8th ed. Wiley, 2019.
+
+\item J. M. Lucas and M. S. Saccucci, ``Exponentially weighted moving average control schemes: Properties and enhancements,'' \textit{Technometrics}, vol. 32, no. 1, pp. 1--12, 1990.
+
+\item N. Ye, S. M. Emran, Q. Chen, and S. Vilbert, ``Multivariate statistical analysis of audit trails for host-based intrusion detection,'' \textit{IEEE Trans. Computers}, vol. 51, no. 7, pp. 810--820, 2002.
+
+\item A. Sperotto et al., ``An overview of IP flow-based intrusion detection,'' \textit{IEEE Comm. Surveys \& Tutorials}, vol. 12, no. 3, pp. 343--356, 2010.
+
+\item M. Ring et al., ``A survey of network-based intrusion detection data sets,'' \textit{Computers \& Security}, vol. 86, pp. 147--167, 2019.
+
+\item M. Javed and V. Paxson, ``Detecting stealthy, distributed SSH brute-forcing,'' in \textit{Proc. ACM CCS}, 2013, pp. 85--96.
+
+\item G. Pang, C. Shen, L. Cao, and A. V. D. Hengel, ``Deep learning for anomaly detection: A review,'' \textit{ACM Computing Surveys}, vol. 54, no. 2, pp. 1--38, 2021.
+
+\item M. Goldstein and S. Uchida, ``A comparative evaluation of unsupervised anomaly detection algorithms,'' \textit{PLOS ONE}, vol. 11, no. 4, 2016.
+
+\item A. B. Nassif et al., ``Machine learning for anomaly detection: A systematic review,'' \textit{IEEE Access}, vol. 9, pp. 78658--78700, 2021.
+
+\item C. C. Aggarwal, \textit{Outlier Analysis}, 2nd ed. Springer, 2017.
+
+\item Elastic, ``What is ELK Stack,'' \url{https://www.elastic.co/what-is/elk-stack}, 2024.
+
+\item Scikit-learn, ``IsolationForest,'' \url{https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.IsolationForest.html}, 2024.
+
+\item S. Ahmad et al., ``Network intrusion detection system: A systematic study of machine learning and deep learning approaches,'' \textit{Transactions on Emerging Telecommunications Technologies}, vol. 32, 2021.
+
+\end{enumerate}
+
+% ============================================================
+% APPENDICES
+% ============================================================
+\appendix
+
+\chapter{MÃ NGUỒN CHÍNH}
+
+\section{Log Parser}
+\begin{lstlisting}[language=Python, caption={Trích đoạn SSHLogParser}]
+class SSHLogParser:
+    RE_MAIN = re.compile(
+        r'^(\d{4}-\d{2}-\d{2}T[\d:.]+[+-]\d{2}:\d{2})\s+'
+        r'(\S+)\s+(\w+)\[(\d+)\]:\s+(.+)$'
+    )
+
+    def parse_line(self, line):
+        main_match = self.RE_MAIN.match(line.strip())
+        if not main_match:
+            return None
+        timestamp_str, hostname, service, pid_str, message = main_match.groups()
+        # ... classify event type and extract fields
+\end{lstlisting}
+
+\section{Feature Extractor}
+\begin{lstlisting}[language=Python, caption={14 Features per IP-Window}]
+FEATURE_NAMES = [
+    'fail_count', 'success_count', 'fail_rate',
+    'unique_usernames', 'invalid_user_count', 'invalid_user_ratio',
+    'connection_count', 'mean_inter_attempt_time',
+    'std_inter_attempt_time', 'min_inter_attempt_time',
+    'unique_ports', 'pam_failure_escalation',
+    'max_retries_exceeded', 'session_duration_mean',
+]
+\end{lstlisting}
+
+\section{Dynamic Threshold}
+\begin{lstlisting}[language=Python, caption={EWMA-Adaptive Percentile Algorithm}]
+def evaluate(self, anomaly_score, timestamp=None, source_ip=None):
+    # Step 1: Update EWMA
+    if self._ewma is None:
+        self._ewma = anomaly_score
+    else:
+        self._ewma = self.alpha * anomaly_score + (1-self.alpha) * self._ewma
+
+    # Step 2: Adaptive threshold
+    self._score_buffer.append(anomaly_score)
+    adaptive_threshold = np.percentile(list(self._score_buffer),
+                                        self.base_percentile)
+
+    # Step 3: Two-level decision
+    early_warning_threshold = adaptive_threshold / self.sensitivity_factor
+    if self._ewma >= adaptive_threshold:
+        return ThreatLevel.ALERT
+    elif self._ewma >= early_warning_threshold:
+        return ThreatLevel.EARLY_WARNING
+    else:
+        return ThreatLevel.NORMAL
+\end{lstlisting}
+
+\chapter{CẤU HÌNH HỆ THỐNG}
+
+\section{Docker Compose}
+Hệ thống sử dụng Docker Compose với 9 services: Elasticsearch, Logstash, Kibana, Redis, API (FastAPI), Detector, Web (React), Fail2Ban, SSH Target. Cấu hình chi tiết tham khảo file \texttt{docker/docker-compose.yml}.
+
+\section{Logstash Pipeline}
+Pipeline Logstash phân tích SSH log sử dụng Grok patterns, enrichment GeoIP, và output vào Elasticsearch index \texttt{ssh-auth-logs-*}.
+
+\end{document}

@@ -1,0 +1,46 @@
+---
+title: |
+  | ỨNG DỤNG AI TRONG PHÁT HIỆN VÀ PHÒNG CHỐNG
+  | TẤN CÔNG BRUTE-FORCE TRÊN HỆ THỐNG SSH
+  | VỚI DỰ ĐOÁN SỚM
+subtitle: |
+  | Application of AI in Detecting and Preventing
+  | Brute-Force Attacks on SSH Systems with Early Prediction
+author: |
+  | KHÓA LUẬN TỐT NGHIỆP
+  | Trường Đại học FPT — Chuyên ngành An toàn thông tin
+date: "Hà Nội, 2026"
+documentclass: report
+classoption:
+  - 13pt
+  - a4paper
+  - oneside
+geometry:
+  - top=3.5cm
+  - bottom=3cm
+  - left=3.5cm
+  - right=2cm
+fontsize: 13pt
+linestretch: 1.5
+indent: true
+header-includes:
+  - \usepackage{indentfirst}
+  - \usepackage{float}
+  - \usepackage{booktabs}
+  - \usepackage{longtable}
+  - \usepackage{fancyhdr}
+  - \pagestyle{fancy}
+  - \fancyhf{}
+  - \fancyhead[R]{\thepage}
+  - \renewcommand{\headrulewidth}{0.5pt}
+  - \usepackage{titlesec}
+  - \titleformat{\chapter}[display]{\normalfont\Large\bfseries\centering}{\MakeUppercase{\chaptertitlename}\ \thechapter}{12pt}{\LARGE}
+  - \setlength{\parindent}{1.27cm}
+  - \usepackage{algorithm}
+  - \usepackage{algorithmic}
+toc: true
+toc-depth: 3
+lof: true
+lot: true
+numbersections: true
+---

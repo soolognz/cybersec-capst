@@ -201,7 +201,7 @@ trong đó N_k(p) là tập k điểm lân cận gần nhất của p.
 
 **Hệ số LOF:** Hệ số LOF của điểm p được tính:
 
-$$LOF_k(p) = \frac{\sum_{o \in N_k(p)} \frac{lrd_k(o)}{lrd_k(p)}}{|N_k(p)}} = \frac{1}{|N_k(p)|} \sum_{o \in N_k(p)} \frac{lrd_k(o)}{lrd_k(p)}$$
+$$LOF_k(p) = \frac{\sum_{o \in N_k(p)} \frac{lrd_k(o)}{lrd_k(p)}}{|N_k(p)|} = \frac{1}{|N_k(p)|} \sum_{o \in N_k(p)} \frac{lrd_k(o)}{lrd_k(p)}$$
 
 Diễn giải:
 - LOF ≈ 1: mật độ cục bộ của p tương đương với các điểm lân cận (bình thường)

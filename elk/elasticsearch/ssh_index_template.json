@@ -1,0 +1,39 @@
+{
+  "index_patterns": ["ssh-auth-logs-*"],
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "index.lifecycle.name": "ssh-auth-logs-policy"
+    },
+    "mappings": {
+      "properties": {
+        "@timestamp": { "type": "date" },
+        "log_host": { "type": "keyword" },
+        "service": { "type": "keyword" },
+        "pid": { "type": "integer" },
+        "event_type": { "type": "keyword" },
+        "ssh_user": { "type": "keyword" },
+        "source_ip": { "type": "ip" },
+        "source_port": { "type": "integer" },
+        "is_invalid_user": { "type": "boolean" },
+        "auth_method": { "type": "keyword" },
+        "log_message": { "type": "text" },
+        "message": { "type": "text" },
+        "anomaly_score": { "type": "float" },
+        "threat_level": { "type": "keyword" },
+        "is_attack": { "type": "boolean" },
+        "geo": {
+          "properties": {
+            "location": { "type": "geo_point" },
+            "country_name": { "type": "keyword" },
+            "city_name": { "type": "keyword" },
+            "country_code2": { "type": "keyword" },
+            "continent_name": { "type": "keyword" },
+            "region_name": { "type": "keyword" }
+          }
+        }
+      }
+    }
+  }
+}

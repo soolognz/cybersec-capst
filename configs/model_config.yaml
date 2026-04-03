@@ -1,0 +1,64 @@
+# Model Configuration for SSH Brute-Force Detection
+# All three models are trained on normal-only data (semi-supervised)
+
+feature_extraction:
+  window_minutes: 5
+  stride_minutes: 1
+
+preprocessing:
+  scaler: RobustScaler
+  handle_nan: fill_zero
+  handle_inf: replace_nan
+
+isolation_forest:
+  # Main model - optimal for high-dimensional anomaly detection
+  n_estimators: 200
+  max_samples: auto
+  contamination: auto
+  max_features: 1.0
+  random_state: 42
+  # Hyperparameter search space
+  tuning:
+    n_estimators: [100, 200, 300]
+    max_samples: [256, 512, auto]
+    max_features: [0.5, 0.75, 1.0]
+
+lof:
+  # Benchmark model - density-based outlier detection
+  n_neighbors: 20
+  novelty: true  # Required for prediction on new data
+  contamination: auto
+  metric: euclidean
+  tuning:
+    n_neighbors: [10, 20, 30, 50]
+
+ocsvm:
+  # Benchmark model - boundary-based outlier detection
+  kernel: rbf
+  gamma: scale
+  nu: 0.05
+  tuning:
+    nu: [0.01, 0.05, 0.1]
+    gamma: [scale, auto]
+
+dynamic_threshold:
+  alpha: 0.3            # EWMA smoothing factor
+  base_percentile: 95   # Baseline percentile for threshold
+  sensitivity_factor: 1.5  # Multiplier for early warning
+  lookback_window: 100  # Recent scores to consider
+  cooldown_minutes: 5   # Alert cooldown per IP
+  fp_target: 0.02       # Target false positive rate
+
+data_split:
+  train_ratio: 0.7
+  test_normal_attack_ratio: 0.333  # 1:3
+
+evaluation:
+  metrics:
+    - accuracy
+    - precision
+    - recall
+    - f1_score
+    - roc_auc
+    - pr_auc
+  cross_validation_folds: 5

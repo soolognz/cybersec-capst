@@ -1,0 +1,36 @@
+# Fail2Ban Jail Configuration for AI-Powered SSH Brute-Force Detection
+# This jail works in conjunction with the AI detection system
+
+[DEFAULT]
+# Ban duration: 1 hour
+bantime = 3600
+# Time window for counting failures
+findtime = 600
+# Max retries before ban (for traditional mode)
+maxretry = 5
+# Ban action: iptables block
+banaction = iptables-multiport
+
+[sshd]
+# Standard SSH protection (fallback)
+enabled = true
+port = ssh
+filter = sshd
+logpath = /var/log/auth.log
+maxretry = 5
+bantime = 600
+
+[sshd-ai]
+# AI-powered SSH protection
+# This jail is controlled by the detection system via fail2ban-client
+enabled = true
+port = ssh
+filter = sshd-ai
+logpath = /var/log/auth.log
+# Higher ban time for AI-detected attacks
+bantime = 3600
+findtime = 600
+# Set high maxretry since AI handles detection logic
+maxretry = 100
+# Action: ban IP and log
+action = iptables-multiport[name=sshd-ai, port="ssh", protocol=tcp]

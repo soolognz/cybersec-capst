@@ -1,0 +1,68 @@
+# Attack Simulation Scenarios for SSH Brute-Force Detection Demo
+# Run: python attack_simulation/<script>.py --target <target_ip>
+
+scenarios:
+  - name: "Scenario 1: Basic Brute-Force"
+    script: brute_force_basic.py
+    description: "Rapid password brute-force from single IP against root"
+    params:
+      target: "localhost"
+      port: 2222
+      username: "root"
+      rate: 10
+      max_attempts: 50
+    expected_detection: "ALERT within 30 seconds"
+    difficulty: "Easy to detect"
+
+  - name: "Scenario 2: Distributed Brute-Force"
+    script: brute_force_distributed.py
+    description: "Multi-threaded coordinated attack simulating multiple sources"
+    params:
+      target: "localhost"
+      port: 2222
+      threads: 5
+      rate: 5
+      max_attempts: 12
+    expected_detection: "ALERT within 20 seconds"
+    difficulty: "Medium"
+
+  - name: "Scenario 3: Low-and-Slow"
+    script: slow_brute_force.py
+    description: "Stealthy attack with 30-120s delays. KEY test for early prediction"
+    params:
+      target: "localhost"
+      port: 2222
+      username: "root"
+      min_delay: 30
+      max_delay: 120
+    expected_detection: "EARLY_WARNING after 3-5 attempts (~5 minutes)"
+    difficulty: "Hard to detect with static threshold"
+
+  - name: "Scenario 4: Credential Stuffing"
+    script: credential_stuffing.py
+    description: "Username:password combo list spray"
+    params:
+      target: "localhost"
+      port: 2222
+      rate: 5
+      max_attempts: 40
+    expected_detection: "ALERT within 15 seconds"
+    difficulty: "Medium"
+
+  - name: "Scenario 5: Dictionary Attack"
+    script: dictionary_attack.py
+    description: "Username enumeration with common passwords"
+    params:
+      target: "localhost"
+      port: 2222
+      rate: 8
+      max_users: 20
+      passwords_per_user: 6
+    expected_detection: "ALERT within 10 seconds"
+    difficulty: "Easy to detect"
+
+demo_order:
+  - "Start with Scenario 1 (basic) to show clear detection"
+  - "Then Scenario 5 (dictionary) to show username enumeration detection"
+  - "Then Scenario 3 (slow) to demonstrate early prediction capability"
+  - "Finally Scenario 2 (distributed) to show coordinated attack detection"

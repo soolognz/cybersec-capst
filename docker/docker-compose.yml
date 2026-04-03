@@ -1,0 +1,190 @@
+version: '3.8'
+
+# SSH Brute-Force Detection System - Full Stack Docker Deployment
+# Usage: docker compose up -d
+# Demo:  docker compose run attacker python brute_force_basic.py --target ssh_target --port 22
+
+services:
+  # ============================================================
+  # ELK Stack
+  # ============================================================
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
+    container_name: ssh-ai-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    networks:
+      - ssh-ai-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.12.0
+    container_name: ssh-ai-logstash
+    volumes:
+      - ../elk/logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - log_volume:/var/log/ssh:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - ssh-ai-net
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.12.0
+    container_name: ssh-ai-kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - server.cors.enabled=true
+      - server.cors.allowOrigin='["*"]'
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - ssh-ai-net
+
+  # ============================================================
+  # Message Queue
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    container_name: ssh-ai-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - ssh-ai-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ============================================================
+  # API Backend
+  # ============================================================
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    container_name: ssh-ai-api
+    ports:
+      - "8000:8000"
+    environment:
+      - ES_HOSTS=http://elasticsearch:9200
+      - REDIS_HOST=redis
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - ALERT_EMAIL_TO=${ALERT_EMAIL_TO:-}
+    volumes:
+      - model_data:/app/trained_models
+      - ../output:/app/output:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ssh-ai-net
+
+  # ============================================================
+  # Real-time Detection Worker
+  # ============================================================
+  detector:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.detector
+    container_name: ssh-ai-detector
+    environment:
+      - REDIS_HOST=redis
+      - LOG_PATH=/var/log/ssh/auth.log
+    volumes:
+      - log_volume:/var/log/ssh:ro
+      - model_data:/app/trained_models:ro
+    depends_on:
+      - redis
+      - api
+    networks:
+      - ssh-ai-net
+
+  # ============================================================
+  # Web Dashboard
+  # ============================================================
+  web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+    container_name: ssh-ai-web
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    networks:
+      - ssh-ai-net
+
+  # ============================================================
+  # Fail2Ban
+  # ============================================================
+  fail2ban:
+    image: crazymax/fail2ban:latest
+    container_name: ssh-ai-fail2ban
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - ../fail2ban:/data
+      - log_volume:/var/log/ssh:ro
+    restart: unless-stopped
+
+  # ============================================================
+  # SSH Target Server (for demo)
+  # ============================================================
+  ssh_target:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ssh_target
+    container_name: ssh-ai-target
+    ports:
+      - "2222:22"
+    volumes:
+      - log_volume:/var/log
+    networks:
+      - ssh-ai-net
+
+  # ============================================================
+  # Attacker (on-demand for demo)
+  # ============================================================
+  attacker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.attacker
+    container_name: ssh-ai-attacker
+    depends_on:
+      - ssh_target
+    networks:
+      - ssh-ai-net
+    profiles:
+      - demo  # Only starts with: docker compose --profile demo run attacker
+
+volumes:
+  es_data:
+    driver: local
+  model_data:
+    driver: local
+  log_volume:
+    driver: local
+
+networks:
+  ssh-ai-net:
+    driver: bridge
